@@ -65,6 +65,14 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
   }
 
   const token = authHeader.slice(7);
+
+  const apiKey = process.env.MCP_API_KEY;
+  if (apiKey && token === apiKey) {
+    (req as any).userEmail = "api-key-user";
+    next();
+    return;
+  }
+
   validateUser(token)
     .then(({ allowed, email }) => {
       if (!allowed) {
