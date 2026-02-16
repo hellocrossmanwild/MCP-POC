@@ -79,7 +79,7 @@ function createMcpServer(): McpServer {
 
 const sseTransports: Record<string, SSEServerTransport> = {};
 
-app.get("/sse", authMiddleware, async (req, res) => {
+app.get("/sse", async (req, res) => {
   const transport = new SSEServerTransport("/messages", res);
   const sessionId = transport.sessionId;
   sseTransports[sessionId] = transport;
@@ -92,7 +92,7 @@ app.get("/sse", authMiddleware, async (req, res) => {
   });
 });
 
-app.post("/messages", authMiddleware, async (req, res) => {
+app.post("/messages", async (req, res) => {
   const sessionId = req.query.sessionId as string;
   const transport = sseTransports[sessionId];
   if (!transport) {
@@ -102,7 +102,7 @@ app.post("/messages", authMiddleware, async (req, res) => {
   await transport.handlePostMessage(req, res, req.body);
 });
 
-app.post("/mcp", authMiddleware, async (req, res) => {
+app.post("/mcp", async (req, res) => {
   try {
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
