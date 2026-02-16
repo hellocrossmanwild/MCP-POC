@@ -704,9 +704,9 @@ export async function bookContractor(params: BookContractorParams) {
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'confirmed', $8)
        RETURNING *`,
       [
-        params.contractor_id, params.shortlist_id || null, params.role_title,
-        params.client_name || null, params.start_date || null, params.end_date || null,
-        params.agreed_rate || null, params.notes || null,
+        params.contractor_id, params.shortlist_id ?? null, params.role_title,
+        params.client_name ?? null, params.start_date ?? null, params.end_date ?? null,
+        params.agreed_rate ?? null, params.notes ?? null,
       ]
     );
 
