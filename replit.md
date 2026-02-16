@@ -1,46 +1,76 @@
 # Contractor Search MCP Server
 
 ## Overview
-An MCP (Model Context Protocol) server that queries a PostgreSQL database of security contractors and returns structured data to Claude Desktop. Access is restricted to Google-authenticated users on an email allowlist.
+A full-lifecycle MCP (Model Context Protocol) server for managing security contractor recruitment. Supports search, shortlisting, outreach drafting, and booking -- all accessible through Claude Desktop. Backed by PostgreSQL with 50 enriched contractor profiles and 10 sample jobs.
 
 ## Architecture
 - **Runtime:** Node.js 20 + TypeScript
 - **MCP SDK:** @modelcontextprotocol/sdk (Streamable HTTP + SSE transports)
 - **Database:** Replit PostgreSQL
-- **Auth:** Google OAuth 2.1 + email allowlist in `allowed_users` table
+- **Auth:** Google OAuth 2.1 + email allowlist (currently paused for testing)
 - **Server:** Express.js on port 5000
 
 ## Project Structure
 ```
 src/
-  index.ts    - Express server, MCP tool registration, OAuth metadata endpoints
-  db.ts       - Database pool + table initialization
+  index.ts    - Express server, 16 MCP tool registrations, SSE + Streamable HTTP transports
+  db.ts       - Database pool + table initialization (contractors, jobs, shortlists, engagements, outreach)
   auth.ts     - Google OAuth token verification + allowlist check middleware
-  tools.ts    - search_contractors and get_contractor query logic
-  seed.ts     - Seeds 50 contractors across 3 sectors
+  tools.ts    - All tool query logic (search, CV, jobs, shortlists, outreach, booking, pipeline)
+  seed.ts     - Seeds 50 enriched contractors + 10 sample jobs, auto-seeds on startup if empty
 ```
 
 ## Database Tables
-- **contractors** - 50 seed records across Financial Services (20), Healthcare/Public Sector (15), Technology (15)
+- **contractors** - 50 enriched records with CVs, work history, education, contact info across Financial Services (20), Healthcare/Public Sector (15), Technology (15)
+- **jobs** - 10 sample open roles across sectors with requirements, rates, urgency levels
+- **shortlists** - Named shortlists for tracking candidate groups per role
+- **shortlist_items** - Individual contractor entries on shortlists with status tracking
+- **engagements** - Booked contractor engagements with dates, rates, status
+- **outreach_drafts** - Saved email drafts for contractor outreach
 - **allowed_users** - Email allowlist for access control
 
 ## MCP Endpoints
 - `POST /mcp` - Streamable HTTP transport (modern clients)
 - `GET /sse` - SSE transport (Claude Desktop)
 - `POST /messages` - SSE message handler
-- `GET /.well-known/oauth-authorization-server` - OAuth metadata
-- `POST /oauth/register` - Dynamic client registration
 - `GET /health` - Health check
-- `GET /` - Server info
+- `GET /` - Server info with tool listing
 
-## MCP Tools
-1. **search_contractors** - Search by location, availability, certifications, max rate, free text
-2. **get_contractor** - Get full profile by UUID
+## MCP Tools (16 total)
+
+### Search & Discovery
+1. **search_contractors** - Search by location, availability, certifications, skills, sector, max rate, clearance, experience, free text
+2. **get_contractor** - Get profile with contact details by UUID
+3. **get_contractor_cv** - Get full CV: work history, education, notable projects, languages, contact info
+
+### Jobs
+4. **list_jobs** - List open roles, filter by status/sector/urgency/location
+5. **get_job** - Full job details by UUID
+6. **find_matching_contractors** - Auto-match contractors to a job's requirements with compatibility scoring
+7. **update_job_status** - Change job status (open → shortlisting → interviewing → offered → filled)
+
+### Shortlisting
+8. **create_shortlist** - Create a named shortlist for a role
+9. **add_to_shortlist** - Add contractor to shortlist with notes
+10. **get_shortlist** - View shortlist with all candidates and status
+11. **list_shortlists** - List all shortlists
+12. **update_candidate_status** - Track candidate through pipeline (shortlisted → contacted → interviewing → offered → accepted)
+
+### Outreach
+13. **draft_outreach** - Save personalized outreach email draft
+14. **list_outreach** - View outreach drafts by contractor or status
+
+### Booking & Pipeline
+15. **book_contractor** - Book contractor for role (creates engagement, marks as unavailable)
+16. **get_pipeline** - Full recruitment pipeline overview: open jobs, active shortlists, engagements, pending outreach
 
 ## Environment Variables Required
 - `DATABASE_URL` - PostgreSQL connection string (auto-set by Replit)
 - `GOOGLE_CLIENT_ID` - Google OAuth client ID
 - `GOOGLE_CLIENT_SECRET` - Google OAuth client secret
+- `SESSION_SECRET` - Session secret
 
 ## Recent Changes
+- 2026-02-16: v2.0 - Full lifecycle: enriched CVs, jobs, shortlists, outreach, booking, pipeline (16 tools)
+- 2026-02-16: Auto-seed on startup for production deployment
 - 2026-02-15: Initial build - database schema, seed data, MCP server with auth
