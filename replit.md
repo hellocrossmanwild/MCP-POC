@@ -20,6 +20,15 @@ src/
   tools.ts    - All tool query logic (search, CV, jobs, shortlists, outreach, booking, pipeline)
   pdf.ts      - PDF report generation (contractor CV, shortlist, comparison)
   seed.ts     - Seeds 50 enriched contractors + 10 sample jobs, auto-seeds on startup if empty
+
+__tests__/
+  setup.ts              - Test environment setup (env vars)
+  fixtures.ts           - 6 test contractors, 3 test jobs, helper factories
+  unit/
+    tools.test.ts       - 65 unit tests for all 16 tool functions (mocked DB)
+    auth.test.ts        - 16 unit tests for auth middleware and OAuth flow
+  integration/
+    database.test.ts    - 30 integration tests against real PostgreSQL
 ```
 
 ## Database Tables
@@ -77,7 +86,16 @@ src/
 - `MCP_API_KEY` - API key for direct access (stored as secret)
 - `PORT` - Server port (defaults to 5000)
 
+## Testing
+- **Framework:** Vitest with v8 coverage
+- **Run tests:** `npm test` (or `npm run test:coverage` for coverage report)
+- **111 total tests:** 65 unit (tools.ts), 16 unit (auth.ts), 30 integration (database)
+- **Coverage:** 100% statements/lines on tools.ts, 90%+ on auth.ts, 95%+ on db.ts
+- **Strategy:** Unit tests mock the database pool; integration tests use real PostgreSQL with fixture data and table truncation between tests
+- **Edge cases covered:** Empty results, invalid UUIDs, malformed inputs, SQL injection attempts, null fields, combined filters
+
 ## Recent Changes
+- 2026-02-16: Comprehensive test suite — 111 tests (Vitest), 100% coverage on tools.ts, unit + integration tests with fixtures, edge cases, SQL injection verification
 - 2026-02-16: Code quality audit — eliminated all `any` types, added TypeScript interfaces (types.ts), consolidated duplicate `getBaseUrl`, removed dead code, added try/catch error handling to all 19 tool handlers, created `.env.example`, improved `.gitignore`
 - 2026-02-16: v2.1 - Added PDF report generation: contractor CVs, shortlist reports, comparison documents (19 tools)
 - 2026-02-16: v2.0 - Full lifecycle: enriched CVs, jobs, shortlists, outreach, booking, pipeline (16 tools)
