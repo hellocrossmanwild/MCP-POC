@@ -6,8 +6,11 @@ dist/
 .env
 .env.local
 .env.production
+.env.*.local
 
 reports/
+
+coverage/
 
 .vscode/
 .idea/
@@ -17,6 +20,13 @@ reports/
 .DS_Store
 Thumbs.db
 
-attached_assets/
+*.log
+npm-debug.log*
 
-coverage/
+.cache/
+.config/
+.local/
+.upm/
+.replit
+
+attached_assets/

@@ -13,13 +13,17 @@ A full-lifecycle MCP (Model Context Protocol) server for managing security contr
 ## Project Structure
 ```
 src/
-  index.ts    - Express server, 19 MCP tool registrations, SSE + Streamable HTTP transports
-  types.ts    - Shared TypeScript interfaces, constants (SERVER_NAME, SERVER_VERSION), getBaseUrl utility
-  db.ts       - Database pool + table initialization (contractors, jobs, shortlists, engagements, outreach)
-  auth.ts     - Google OAuth token verification + allowlist check middleware (uses AuthenticatedRequest type)
-  tools.ts    - All tool query logic (search, CV, jobs, shortlists, outreach, booking, pipeline)
-  pdf.ts      - PDF report generation (contractor CV, shortlist, comparison)
-  seed.ts     - Seeds 50 enriched contractors + 10 sample jobs, auto-seeds on startup if empty
+  index.ts        - Express server, 19 MCP tool registrations, SSE + Streamable HTTP transports
+  types.ts        - Shared TypeScript interfaces, constants (SERVER_NAME, SERVER_VERSION), getBaseUrl utility
+  db.ts           - Database pool + table initialization
+  auth.ts         - Google OAuth + API key middleware with email allowlist
+  tools.ts        - Query builders for all 16 data tools
+  pdf.ts          - PDF report generators (contractor CV, shortlist, comparison)
+  seed.ts         - 50 enriched contractors + 10 sample jobs, auto-seeds on startup
+
+migrations/       - Numbered SQL migration files (001–006)
+scripts/
+  migrate.ts      - Runs migration files in order with transactions
 
 __tests__/
   setup.ts              - Test environment setup (env vars)
@@ -94,7 +98,18 @@ __tests__/
 - **Strategy:** Unit tests mock the database pool; integration tests use real PostgreSQL with fixture data and table truncation between tests
 - **Edge cases covered:** Empty results, invalid UUIDs, malformed inputs, SQL injection attempts, null fields, combined filters
 
+## npm Scripts
+- `npm run dev` — Start dev server with tsx
+- `npm start` — Start production server (requires build)
+- `npm run build` — Compile TypeScript to dist/
+- `npm test` — Run all 111 tests
+- `npm run test:coverage` — Tests with coverage report
+- `npm run migrate` — Run numbered SQL migrations
+- `npm run seed` — Seed database with sample data
+- `npm run lint` — Type-check without emitting
+
 ## Recent Changes
+- 2026-02-16: GitHub release prep — LICENSE, CONTRIBUTING.md, migrations/, scripts/, proper package.json metadata, devDependencies separated
 - 2026-02-16: Added README.md with architecture overview, tool table, quick start, Claude connection instructions, and fork-and-adapt guide
 - 2026-02-16: Added JSDoc comments to every exported function, interface, and constant across all source files with file-level architecture comments
 - 2026-02-16: Comprehensive test suite — 111 tests (Vitest), 100% coverage on tools.ts, unit + integration tests with fixtures, edge cases, SQL injection verification

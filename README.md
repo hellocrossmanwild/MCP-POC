@@ -32,7 +32,7 @@ Claude Desktop / Claude.ai
   └── SSE              GET  /sse
         │
         ▼
-  PostgreSQL (Neon)
+  PostgreSQL
   ├── contractors  (50 enriched profiles)
   ├── jobs         (10 open roles)
   ├── shortlists + shortlist_items
@@ -70,7 +70,7 @@ Claude Desktop / Claude.ai
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/your-org/mcp-recruitment-pipeline.git
+git clone https://github.com/hellocrossman/mcp-recruitment-pipeline.git
 cd mcp-recruitment-pipeline
 
 # 2. Install dependencies
@@ -84,11 +84,17 @@ npm install
 cp .env.example .env
 #    Edit .env with your DATABASE_URL and auth settings
 
-# 5. Start the server (seeds automatically on first run)
-npx tsx src/index.ts
+# 5. Run database migrations
+npm run migrate
+
+# 6. Seed the database with sample data
+npm run seed
+
+# 7. Start the server
+npm run dev
 ```
 
-The server starts on port 5000. The database is seeded with 50 contractor profiles and 10 jobs on first run.
+The server starts on port 5000 with 50 contractor profiles and 10 open roles.
 
 ## Connect to Claude
 
@@ -120,13 +126,30 @@ In Claude.ai settings, add a custom MCP connector:
 
 This is a proof of concept — the structure is designed to be forked and adapted to any service domain. Key steps:
 
-1. **Define your data model.** Replace `contractors` with your domain entities (candidates, properties, products, inventory). Update the schema in `src/db.ts`.
+1. **Define your data model.** Replace `contractors` with your domain entities (candidates, properties, products, inventory). Update the migration files in `migrations/` and the schema in `src/db.ts`.
 
 2. **Update the seed data.** Edit `src/seed.ts` with realistic records for your domain. The current 50 contractor profiles show the level of enrichment that makes AI interactions useful.
 
 3. **Modify the tool handlers.** Each function in `src/tools.ts` maps to one MCP tool. Rename them, change the query logic, add new tools. The pattern is always: validate input → build parameterised query → return structured result.
 
 4. **Deploy.** Push to Replit, Railway, Fly.io, or any Node.js host with PostgreSQL access.
+
+## Project Structure
+
+```
+src/
+  index.ts        Entry point — Express server, 19 MCP tool registrations
+  types.ts        Shared TypeScript interfaces and constants
+  db.ts           Database pool and schema initialization
+  auth.ts         Google OAuth + API key middleware
+  tools.ts        Query builders for all 16 data tools
+  pdf.ts          PDF report generators (contractor CV, shortlist, comparison)
+  seed.ts         50 contractor profiles + 10 sample jobs
+
+migrations/       Numbered SQL migration files
+scripts/          Utility scripts (migrate runner)
+__tests__/        111 tests (unit + integration)
+```
 
 ## Environment Variables
 
@@ -142,21 +165,17 @@ At least one auth method (`GOOGLE_CLIENT_ID` or `MCP_API_KEY`) is recommended fo
 ## Running Tests
 
 ```bash
-# Run all 111 tests
-npm test
-
-# Run with coverage report
-npm run test:coverage
-
-# Watch mode during development
-npm run test:watch
+npm test              # Run all 111 tests
+npm run test:coverage # Run with coverage report
+npm run test:watch    # Watch mode during development
+npm run lint          # Type-check without emitting
 ```
 
 **Coverage:** 100% on tool handlers, 90%+ on auth, 95%+ on database layer. Tests include unit tests with mocked DB, integration tests against real PostgreSQL, and edge cases for invalid inputs and SQL injection attempts.
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).
 
 ## Built By
 
