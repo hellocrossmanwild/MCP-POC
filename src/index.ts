@@ -128,48 +128,10 @@ app.post("/mcp", async (req, res) => {
   }
 });
 
-app.get("/.well-known/oauth-protected-resource", (req, res) => {
-  const baseUrl = getBaseUrl(req);
-  res.json({
-    resource: baseUrl,
-    authorization_servers: [baseUrl],
-    scopes_supported: ["openid", "email", "profile"],
-    bearer_methods_supported: ["header"],
-  });
-});
-
-app.get("/.well-known/oauth-authorization-server", (req, res) => {
-  const baseUrl = getBaseUrl(req);
-  res.json({
-    issuer: baseUrl,
-    authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
-    token_endpoint: "https://oauth2.googleapis.com/token",
-    registration_endpoint: `${baseUrl}/oauth/register`,
-    scopes_supported: ["openid", "email", "profile"],
-    response_types_supported: ["code"],
-    grant_types_supported: ["authorization_code", "refresh_token"],
-    code_challenge_methods_supported: ["S256"],
-    token_endpoint_auth_methods_supported: ["client_secret_post", "none"],
-  });
-});
-
-app.post("/oauth/register", (req, res) => {
-  console.log("OAuth DCR request:", JSON.stringify(req.body));
-  const redirectUris = req.body?.redirect_uris || [
-    "https://claude.ai/api/mcp/auth_callback",
-    "https://claude.com/api/mcp/auth_callback",
-  ];
-  res.status(201).json({
-    client_id: process.env.GOOGLE_CLIENT_ID || "",
-    client_secret: process.env.GOOGLE_CLIENT_SECRET || "",
-    client_id_issued_at: Math.floor(Date.now() / 1000),
-    client_secret_expires_at: 0,
-    redirect_uris: redirectUris,
-    grant_types: ["authorization_code", "refresh_token"],
-    response_types: ["code"],
-    token_endpoint_auth_method: "client_secret_post",
-  });
-});
+// OAuth endpoints commented out for testing -- re-enable when auth is needed
+// app.get("/.well-known/oauth-protected-resource", ...)
+// app.get("/.well-known/oauth-authorization-server", ...)
+// app.post("/oauth/register", ...)
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", name: "contractor-search", version: "1.0.0" });
