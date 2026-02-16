@@ -1,3 +1,9 @@
+/**
+ * @file Express server and MCP tool registration. Entry point for the application.
+ * Binds 19 MCP tools to their handler functions, configures SSE and Streamable HTTP
+ * transports, and serves generated PDF reports from the /reports directory.
+ */
+
 import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -31,6 +37,14 @@ app.use((req, _res, next) => {
   next();
 });
 
+/**
+ * Factory that creates a new McpServer instance with all 19 tools registered.
+ * Called per-session for SSE transport and per-request for Streamable HTTP transport.
+ * Each tool handler wraps the corresponding function from tools.ts or pdf.ts
+ * with try/catch error handling and MCP response formatting.
+ *
+ * @returns Configured McpServer ready to be connected to a transport.
+ */
 function createMcpServer(): McpServer {
   const server = new McpServer({
     name: SERVER_NAME,
@@ -388,6 +402,7 @@ function createMcpServer(): McpServer {
   return server;
 }
 
+/** Active SSE transport sessions, keyed by session ID. Cleaned up on connection close. */
 const sseTransports: Record<string, SSEServerTransport> = {};
 
 app.get("/sse", async (req, res) => {
@@ -466,6 +481,10 @@ app.get("/", (_req, res) => {
 
 const PORT = parseInt(process.env.PORT || "5000", 10);
 
+/**
+ * Async entry point. Initializes the database schema, seeds sample data
+ * if the contractors table is empty, and starts the Express server on PORT.
+ */
 async function main(): Promise<void> {
   await initDatabase();
   await seedIfEmpty();

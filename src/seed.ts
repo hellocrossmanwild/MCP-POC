@@ -1,5 +1,17 @@
+/**
+ * @file Seed data for 50 enriched contractor profiles and 10 sample jobs across
+ * Financial Services, Healthcare/Public Sector, and Technology sectors.
+ * Auto-seeds on startup if the contractors table is empty. Called by index.ts.
+ * Can also be run directly via `npx tsx src/seed.ts`.
+ */
+
 import { pool, initDatabase } from "./db.js";
 
+/**
+ * Shape of contractor seed data before database insertion.
+ * Unlike {@link ContractorRow}, all numeric fields are actual numbers
+ * (not strings) since they haven't been through the pg driver yet.
+ */
 interface ContractorSeed {
   name: string;
   initials: string;
@@ -1381,6 +1393,11 @@ const sampleJobs = [
   },
 ];
 
+/**
+ * Seeds the database with sample contractors and jobs if the tables are empty.
+ * If contractors exist but lack enriched data (no email), re-seeds with full profiles.
+ * Also seeds jobs if the jobs table is empty. Called by index.ts at startup.
+ */
 export async function seedIfEmpty(): Promise<void> {
   const existing = await pool.query("SELECT COUNT(*) as count FROM contractors");
   if (parseInt(existing.rows[0].count, 10) > 0) {

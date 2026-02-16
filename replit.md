@@ -95,6 +95,8 @@ __tests__/
 - **Edge cases covered:** Empty results, invalid UUIDs, malformed inputs, SQL injection attempts, null fields, combined filters
 
 ## Recent Changes
+- 2026-02-16: Added README.md with architecture overview, tool table, quick start, Claude connection instructions, and fork-and-adapt guide
+- 2026-02-16: Added JSDoc comments to every exported function, interface, and constant across all source files with file-level architecture comments
 - 2026-02-16: Comprehensive test suite — 111 tests (Vitest), 100% coverage on tools.ts, unit + integration tests with fixtures, edge cases, SQL injection verification
 - 2026-02-16: Code quality audit — eliminated all `any` types, added TypeScript interfaces (types.ts), consolidated duplicate `getBaseUrl`, removed dead code, added try/catch error handling to all 19 tool handlers, created `.env.example`, improved `.gitignore`
 - 2026-02-16: v2.1 - Added PDF report generation: contractor CVs, shortlist reports, comparison documents (19 tools)

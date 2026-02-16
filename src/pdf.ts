@@ -1,3 +1,10 @@
+/**
+ * @file PDF report generators using PDFKit. Writes files to the `/reports` directory
+ * and returns download URLs. Called by MCP tool handlers in index.ts.
+ * Supports three report types: individual contractor CV, shortlist summary,
+ * and side-by-side contractor comparison.
+ */
+
 import PDFDocument from "pdfkit";
 import { pool } from "./db.js";
 import fs from "fs";
@@ -6,17 +13,20 @@ import type { ContractorRow, WorkHistoryEntry, EducationEntry, ProjectEntry } fr
 
 const REPORTS_DIR = path.join(process.cwd(), "reports");
 
+/** Creates the reports output directory if it doesn't exist. */
 function ensureReportsDir(): void {
   if (!fs.existsSync(REPORTS_DIR)) {
     fs.mkdirSync(REPORTS_DIR, { recursive: true });
   }
 }
 
+/** Formats a date as "1 January 2025" (en-GB), or "N/A" if null. */
 function formatDate(date: string | Date | null): string {
   if (!date) return "N/A";
   return new Date(date).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 }
 
+/** Draws the dark header bar with title and optional subtitle. */
 function drawHeader(doc: PDFKit.PDFDocument, title: string, subtitle?: string): void {
   doc.rect(0, 0, doc.page.width, 80).fill("#1a1a2e");
   doc.fillColor("#ffffff").fontSize(22).font("Helvetica-Bold").text(title, 40, 25, { width: doc.page.width - 80 });
@@ -27,6 +37,7 @@ function drawHeader(doc: PDFKit.PDFDocument, title: string, subtitle?: string): 
   doc.y = 100;
 }
 
+/** Draws a section title with a blue accent bar. */
 function drawSectionTitle(doc: PDFKit.PDFDocument, title: string): void {
   doc.moveDown(0.5);
   const y = doc.y;
@@ -36,11 +47,13 @@ function drawSectionTitle(doc: PDFKit.PDFDocument, title: string): void {
   doc.moveDown(0.3);
 }
 
+/** Draws a bold label followed by a normal-weight value on the same line. */
 function drawKeyValue(doc: PDFKit.PDFDocument, key: string, value: string, x = 50): void {
   doc.font("Helvetica-Bold").text(`${key}: `, x, doc.y, { continued: true });
   doc.font("Helvetica").text(value);
 }
 
+/** Draws a thin horizontal divider line. */
 function drawDivider(doc: PDFKit.PDFDocument): void {
   doc.moveDown(0.3);
   const y = doc.y;
@@ -48,12 +61,22 @@ function drawDivider(doc: PDFKit.PDFDocument): void {
   doc.moveDown(0.3);
 }
 
+/** Draws the page footer with generation timestamp. */
 function drawFooter(doc: PDFKit.PDFDocument): void {
   const y = doc.page.height - 40;
   doc.fontSize(8).fillColor("#999999")
     .text(`Generated ${new Date().toLocaleString("en-GB")} | Contractor Search MCP`, 40, y, { width: doc.page.width - 80, align: "center" });
 }
 
+/**
+ * Generates an A4 PDF with the full contractor CV: profile summary, bio,
+ * contact details, certifications, skills, sectors, work history, education,
+ * notable projects, and languages. Automatically paginates long content.
+ *
+ * @param contractorId - UUID of the contractor to generate the report for.
+ * @param baseUrl - Server base URL used to construct the download link.
+ * @returns `{ url, filename }` on success, or `{ error }` if the contractor is not found.
+ */
 export async function generateContractorPDF(contractorId: string, baseUrl: string): Promise<{ url: string; filename: string } | { error: string }> {
   const result = await pool.query(
     `SELECT * FROM contractors WHERE id = $1`,
@@ -168,6 +191,15 @@ export async function generateContractorPDF(contractorId: string, baseUrl: strin
   });
 }
 
+/**
+ * Generates an A4 PDF listing all candidates on a shortlist with their
+ * profiles, status, notes, and key metrics. Candidates are numbered
+ * sequentially and the report auto-paginates.
+ *
+ * @param shortlistId - UUID of the shortlist.
+ * @param baseUrl - Server base URL used to construct the download link.
+ * @returns `{ url, filename }` on success, or `{ error }` if the shortlist is not found.
+ */
 export async function generateShortlistPDF(shortlistId: string, baseUrl: string): Promise<{ url: string; filename: string } | { error: string }> {
   const shortlist = await pool.query(`SELECT * FROM shortlists WHERE id = $1`, [shortlistId]);
   if (shortlist.rows.length === 0) return { error: "Shortlist not found" };
@@ -252,6 +284,10 @@ export async function generateShortlistPDF(shortlistId: string, baseUrl: string)
   });
 }
 
+/**
+ * Subset of {@link ContractorRow} fields used in side-by-side comparison reports.
+ * Excludes work history, education, and projects to keep the comparison table compact.
+ */
 interface ComparisonContractor {
   id: string;
   name: string;
@@ -273,6 +309,15 @@ interface ComparisonContractor {
   bio: string | null;
 }
 
+/**
+ * Generates a landscape A4 PDF with a side-by-side contractor comparison table.
+ * Compares scalar fields (rate, experience, clearance, rating) in rows and
+ * list fields (certifications, skills, sectors) in aligned columns below.
+ *
+ * @param contractorIds - Array of contractor UUIDs to compare. Must be 2–10 inclusive.
+ * @param baseUrl - Server base URL used to construct the download link.
+ * @returns `{ url, filename }` on success, or `{ error }` if validation fails or no contractors found.
+ */
 export async function generateComparisonPDF(contractorIds: string[], baseUrl: string): Promise<{ url: string; filename: string } | { error: string }> {
   if (!contractorIds || contractorIds.length < 2) return { error: "Provide at least 2 contractor IDs to compare" };
   if (contractorIds.length > 10) return { error: "Maximum 10 contractors for comparison" };

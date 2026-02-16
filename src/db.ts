@@ -1,3 +1,9 @@
+/**
+ * @file PostgreSQL connection pool and schema initialization.
+ * Called once at startup by index.ts. Provides the shared `pool` used
+ * by tools, auth, seed, and PDF modules for all database access.
+ */
+
 import pg from "pg";
 
 const { Pool } = pg;
@@ -6,10 +12,27 @@ if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL must be set.");
 }
 
+/**
+ * Shared pg Pool instance configured from the `DATABASE_URL` environment variable.
+ * All modules import this single pool — do not create additional pools.
+ */
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
+/**
+ * Creates all application tables, constraints, and indexes if they don't already exist.
+ * Idempotent — safe to call on every startup.
+ *
+ * Tables created: `contractors`, `allowed_users`, `shortlists`, `shortlist_items`,
+ * `engagements`, `outreach_drafts`, `jobs`.
+ *
+ * Also runs an `ALTER TABLE` migration block to add columns (`email`, `phone`,
+ * `linkedin_url`, `profile_photo_url`, `education`, `work_history`,
+ * `notable_projects`, `languages`) that may not exist in older schemas.
+ *
+ * @returns Resolves when all DDL statements have completed.
+ */
 export async function initDatabase(): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS contractors (

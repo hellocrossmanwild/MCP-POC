@@ -1,3 +1,9 @@
+/**
+ * @file Authentication middleware supporting Google OAuth 2.0 and API key auth.
+ * Protects MCP endpoints with an email allowlist stored in the `allowed_users` table.
+ * Used by index.ts to gate access to SSE/Streamable HTTP transports.
+ */
+
 import { OAuth2Client } from "google-auth-library";
 import { pool } from "./db.js";
 import type { Response, NextFunction } from "express";
@@ -8,18 +14,28 @@ const googleClientId = process.env.GOOGLE_CLIENT_ID;
 
 const oauthClient = new OAuth2Client(googleClientId);
 
+/** Verified Google user info extracted from an ID token or userinfo endpoint. */
 interface GoogleUser {
   email: string;
   name?: string;
   picture?: string;
 }
 
+/** Raw JSON shape returned by Google's userinfo v3 endpoint. */
 interface UserInfoResponse {
   email?: string;
   name?: string;
   picture?: string;
 }
 
+/**
+ * Verifies a Google auth token and extracts user info.
+ * Tries ID token verification first (faster, offline). On failure, falls back
+ * to calling the Google userinfo endpoint (handles access tokens).
+ *
+ * @param token - Google ID token or access token.
+ * @returns Verified user info, or `null` on any verification failure (never throws).
+ */
 export async function verifyGoogleToken(token: string): Promise<GoogleUser | null> {
   try {
     const ticket = await oauthClient.verifyIdToken({
@@ -48,6 +64,13 @@ export async function verifyGoogleToken(token: string): Promise<GoogleUser | nul
   }
 }
 
+/**
+ * Checks whether an email is on the allowlist in the `allowed_users` table.
+ * Comparison is case-insensitive (lowercased before query).
+ *
+ * @param email - Email address to check.
+ * @returns `true` if the email exists in `allowed_users`.
+ */
 export async function isUserAllowed(email: string): Promise<boolean> {
   const result = await pool.query(
     "SELECT email FROM allowed_users WHERE email = $1",
@@ -56,6 +79,12 @@ export async function isUserAllowed(email: string): Promise<boolean> {
   return result.rows.length > 0;
 }
 
+/**
+ * Combines token verification and allowlist check into a single call.
+ *
+ * @param token - Google auth token to verify.
+ * @returns `{ allowed: true, email }` if valid and on allowlist, `{ allowed: false }` otherwise.
+ */
 export async function validateUser(token: string): Promise<{ allowed: boolean; email?: string }> {
   const user = await verifyGoogleToken(token);
   if (!user?.email) {
@@ -65,6 +94,17 @@ export async function validateUser(token: string): Promise<{ allowed: boolean; e
   return { allowed, email: user.email };
 }
 
+/**
+ * Express middleware that enforces authentication on protected routes.
+ *
+ * Auth flow:
+ * 1. If no `Authorization: Bearer <token>` header → 401 with `WWW-Authenticate` header.
+ * 2. If token matches `MCP_API_KEY` env var → sets `userEmail` to `"api-key-user"` and passes through.
+ * 3. Otherwise validates as Google OAuth token against the allowlist.
+ *    - Valid + allowed → sets `userEmail` to verified email and calls `next()`.
+ *    - Valid + not allowed → 403 "Access denied".
+ *    - Invalid token → 401 "Invalid token".
+ */
 export function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith("Bearer ")) {
