@@ -1,4 +1,5 @@
 import { pool } from "./db.js";
+import { QueryResultRow } from "pg";
 
 interface SearchParams {
   query?: string;
@@ -13,9 +14,103 @@ interface SearchParams {
   limit?: number;
 }
 
-export async function searchContractors(params: SearchParams) {
+interface ContractorSummary extends QueryResultRow {
+  id: string;
+  name: string;
+  initials: string;
+  title: string;
+  bio: string | null;
+  location: string;
+  day_rate: number;
+  years_experience: number;
+  availability: string;
+  available_from: string | null;
+  certifications: string[];
+  sectors: string[];
+  skills: string[];
+  rating: string | null;
+  review_count: number;
+  placement_count: number;
+  security_clearance: string | null;
+  email: string | null;
+  linkedin_url: string | null;
+}
+
+interface ContractorProfile extends ContractorSummary {
+  phone: string | null;
+  created_at: string;
+}
+
+interface ContractorCV extends ContractorSummary {
+  phone: string | null;
+  education: EducationEntry[];
+  work_history: WorkHistoryEntry[];
+  notable_projects: ProjectEntry[];
+  languages: string[];
+}
+
+interface EducationEntry {
+  institution: string;
+  degree: string;
+  year?: number;
+}
+
+interface WorkHistoryEntry {
+  company: string;
+  role: string;
+  period: string;
+  description: string;
+}
+
+interface ProjectEntry {
+  name: string;
+  client?: string;
+  description: string;
+}
+
+interface JobRow extends QueryResultRow {
+  id: string;
+  title: string;
+  client_name: string;
+  description: string;
+  location: string;
+  remote_option: string;
+  day_rate_min: number | null;
+  day_rate_max: number | null;
+  duration_weeks: number | null;
+  start_date: string | null;
+  required_certifications: string[];
+  required_skills: string[];
+  required_clearance: string | null;
+  sector: string | null;
+  experience_min: number | null;
+  status: string;
+  urgency: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface SearchResult {
+  total_matches: number;
+  showing: number;
+  contractors: ContractorSummary[];
+}
+
+interface MatchResult {
+  job: { id: string; title: string; client_name: string; location: string };
+  total_matches: number;
+  contractors: (ContractorSummary & {
+    matching_certifications: string[];
+    matching_skills: string[];
+    location_match: boolean;
+    within_budget: boolean;
+  })[];
+}
+
+export async function searchContractors(params: SearchParams): Promise<SearchResult> {
   const conditions: string[] = [];
-  const values: any[] = [];
+  const values: (string | number | string[])[] = [];
   let paramIndex = 1;
 
   if (params.location) {
@@ -100,18 +195,18 @@ export async function searchContractors(params: SearchParams) {
   return {
     total_matches: totalMatches,
     showing: dataResult.rows.length,
-    contractors: dataResult.rows.map(row => ({
+    contractors: dataResult.rows.map((row: QueryResultRow) => ({
       ...row,
       day_rate: parseInt(row.day_rate, 10),
       years_experience: parseInt(row.years_experience, 10),
       rating: row.rating ? parseFloat(row.rating) : null,
       review_count: parseInt(row.review_count, 10),
       placement_count: parseInt(row.placement_count, 10),
-    })),
+    } as ContractorSummary)),
   };
 }
 
-export async function getContractor(id: string) {
+export async function getContractor(id: string): Promise<ContractorProfile | null> {
   const result = await pool.query(
     `SELECT id, name, initials, title, bio, location, day_rate, years_experience,
             availability, available_from, certifications, sectors, skills,
@@ -134,7 +229,7 @@ export async function getContractor(id: string) {
   };
 }
 
-export async function getContractorCV(id: string) {
+export async function getContractorCV(id: string): Promise<ContractorCV | null> {
   const result = await pool.query(
     `SELECT id, name, initials, title, bio, location, day_rate, years_experience,
             availability, certifications, sectors, skills,
@@ -158,9 +253,9 @@ export async function getContractorCV(id: string) {
   };
 }
 
-export async function listJobs(params: { status?: string; sector?: string; urgency?: string; location?: string; limit?: number }) {
+export async function listJobs(params: { status?: string; sector?: string; urgency?: string; location?: string; limit?: number }): Promise<{ total: number; jobs: JobRow[] }> {
   const conditions: string[] = [];
-  const values: any[] = [];
+  const values: (string | number)[] = [];
   let paramIndex = 1;
 
   if (params.status) {
@@ -204,18 +299,18 @@ export async function listJobs(params: { status?: string; sector?: string; urgen
   };
 }
 
-export async function getJob(id: string) {
+export async function getJob(id: string): Promise<JobRow | null> {
   const result = await pool.query(`SELECT * FROM jobs WHERE id = $1`, [id]);
   if (result.rows.length === 0) return null;
   return result.rows[0];
 }
 
-export async function findMatchingContractors(jobId: string, limit?: number) {
+export async function findMatchingContractors(jobId: string, limit?: number): Promise<MatchResult | { error: string }> {
   const job = await getJob(jobId);
   if (!job) return { error: "Job not found" };
 
   const conditions: string[] = [];
-  const values: any[] = [];
+  const values: (string | number | string[])[] = [];
   let paramIndex = 1;
 
   if (job.required_certifications && job.required_certifications.length > 0) {
@@ -260,7 +355,7 @@ export async function findMatchingContractors(jobId: string, limit?: number) {
     [...values, job.location, maxResults]
   );
 
-  const contractors = result.rows.map(row => {
+  const contractors = result.rows.map((row: QueryResultRow) => {
     const certMatch = job.required_certifications?.filter((c: string) => row.certifications?.includes(c)) || [];
     const skillMatch = job.required_skills?.filter((s: string) => row.skills?.includes(s)) || [];
     return {
@@ -272,6 +367,11 @@ export async function findMatchingContractors(jobId: string, limit?: number) {
       matching_skills: skillMatch,
       location_match: row.location.toLowerCase() === job.location.toLowerCase(),
       within_budget: row.day_rate <= (job.day_rate_max || Infinity),
+    } as ContractorSummary & {
+      matching_certifications: string[];
+      matching_skills: string[];
+      location_match: boolean;
+      within_budget: boolean;
     };
   });
 
@@ -282,7 +382,7 @@ export async function findMatchingContractors(jobId: string, limit?: number) {
   };
 }
 
-export async function createShortlist(params: { name: string; description?: string; role_title?: string; client_name?: string; job_id?: string }) {
+export async function createShortlist(params: { name: string; description?: string; role_title?: string; client_name?: string }): Promise<QueryResultRow> {
   const result = await pool.query(
     `INSERT INTO shortlists (name, description, role_title, client_name)
      VALUES ($1, $2, $3, $4)
@@ -292,7 +392,7 @@ export async function createShortlist(params: { name: string; description?: stri
   return result.rows[0];
 }
 
-export async function addToShortlist(params: { shortlist_id: string; contractor_id: string; notes?: string }) {
+export async function addToShortlist(params: { shortlist_id: string; contractor_id: string; notes?: string }): Promise<QueryResultRow | { error: string }> {
   const contractor = await pool.query(`SELECT name, title FROM contractors WHERE id = $1`, [params.contractor_id]);
   if (contractor.rows.length === 0) return { error: "Contractor not found" };
 
@@ -311,7 +411,17 @@ export async function addToShortlist(params: { shortlist_id: string; contractor_
   };
 }
 
-export async function getShortlist(id: string) {
+interface ShortlistDetail extends QueryResultRow {
+  id: string;
+  name: string;
+  description: string | null;
+  role_title: string | null;
+  client_name: string | null;
+  status: string;
+  candidates: QueryResultRow[];
+}
+
+export async function getShortlist(id: string): Promise<ShortlistDetail | null> {
   const shortlist = await pool.query(`SELECT * FROM shortlists WHERE id = $1`, [id]);
   if (shortlist.rows.length === 0) return null;
 
@@ -326,7 +436,7 @@ export async function getShortlist(id: string) {
 
   return {
     ...shortlist.rows[0],
-    candidates: items.rows.map(row => ({
+    candidates: items.rows.map((row: QueryResultRow) => ({
       ...row,
       day_rate: parseInt(row.day_rate, 10),
       rating: row.rating ? parseFloat(row.rating) : null,
@@ -334,7 +444,7 @@ export async function getShortlist(id: string) {
   };
 }
 
-export async function listShortlists(status?: string) {
+export async function listShortlists(status?: string): Promise<QueryResultRow[]> {
   const query = status
     ? `SELECT s.*, COUNT(si.id) as candidate_count FROM shortlists s LEFT JOIN shortlist_items si ON s.id = si.shortlist_id WHERE s.status = $1 GROUP BY s.id ORDER BY s.created_at DESC`
     : `SELECT s.*, COUNT(si.id) as candidate_count FROM shortlists s LEFT JOIN shortlist_items si ON s.id = si.shortlist_id GROUP BY s.id ORDER BY s.created_at DESC`;
@@ -343,7 +453,7 @@ export async function listShortlists(status?: string) {
   return result.rows;
 }
 
-export async function updateShortlistItemStatus(params: { shortlist_id: string; contractor_id: string; status: string }) {
+export async function updateShortlistItemStatus(params: { shortlist_id: string; contractor_id: string; status: string }): Promise<QueryResultRow | { error: string }> {
   const result = await pool.query(
     `UPDATE shortlist_items SET status = $1, updated_at = NOW()
      WHERE shortlist_id = $2 AND contractor_id = $3
@@ -354,7 +464,7 @@ export async function updateShortlistItemStatus(params: { shortlist_id: string; 
   return result.rows[0];
 }
 
-export async function draftOutreach(params: { contractor_id: string; job_id?: string; shortlist_id?: string; subject: string; body: string }) {
+export async function draftOutreach(params: { contractor_id: string; shortlist_id?: string; subject: string; body: string }): Promise<QueryResultRow | { error: string }> {
   const contractor = await pool.query(`SELECT name, email FROM contractors WHERE id = $1`, [params.contractor_id]);
   if (contractor.rows.length === 0) return { error: "Contractor not found" };
 
@@ -372,9 +482,9 @@ export async function draftOutreach(params: { contractor_id: string; job_id?: st
   };
 }
 
-export async function listOutreach(params?: { contractor_id?: string; status?: string }) {
+export async function listOutreach(params?: { contractor_id?: string; status?: string }): Promise<QueryResultRow[]> {
   const conditions: string[] = [];
-  const values: any[] = [];
+  const values: string[] = [];
   let paramIndex = 1;
 
   if (params?.contractor_id) {
@@ -403,6 +513,13 @@ export async function listOutreach(params?: { contractor_id?: string; status?: s
   return result.rows;
 }
 
+interface BookingResult {
+  engagement: QueryResultRow;
+  contractor_name: string;
+  contractor_email: string | null;
+  message: string;
+}
+
 export async function bookContractor(params: {
   contractor_id: string;
   role_title: string;
@@ -412,7 +529,7 @@ export async function bookContractor(params: {
   end_date?: string;
   agreed_rate?: number;
   notes?: string;
-}) {
+}): Promise<BookingResult | { error: string }> {
   const contractor = await pool.query(`SELECT name, title, email FROM contractors WHERE id = $1`, [params.contractor_id]);
   if (contractor.rows.length === 0) return { error: "Contractor not found" };
 
@@ -448,7 +565,20 @@ export async function bookContractor(params: {
   };
 }
 
-export async function getPipeline() {
+interface PipelineOverview {
+  open_jobs: QueryResultRow[];
+  active_shortlists: QueryResultRow[];
+  active_engagements: QueryResultRow[];
+  pending_outreach: QueryResultRow[];
+  summary: {
+    open_jobs_count: number;
+    active_shortlists_count: number;
+    active_engagements_count: number;
+    pending_outreach_count: number;
+  };
+}
+
+export async function getPipeline(): Promise<PipelineOverview> {
   const openJobs = await pool.query(
     `SELECT id, title, client_name, status, urgency, location, start_date
      FROM jobs WHERE status NOT IN ('filled', 'cancelled')
@@ -494,7 +624,7 @@ export async function getPipeline() {
   };
 }
 
-export async function updateJobStatus(id: string, status: string) {
+export async function updateJobStatus(id: string, status: string): Promise<QueryResultRow | { error: string }> {
   const result = await pool.query(
     `UPDATE jobs SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
     [status, id]

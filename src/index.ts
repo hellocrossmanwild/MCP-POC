@@ -4,7 +4,6 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { z } from "zod";
 import { initDatabase } from "./db.js";
-import { authMiddleware } from "./auth.js";
 import {
   searchContractors, getContractor, getContractorCV,
   listJobs, getJob, findMatchingContractors,
@@ -30,7 +29,15 @@ function getBaseUrl(req?: express.Request): string {
   if (process.env.REPLIT_DEV_DOMAIN) {
     return `https://${process.env.REPLIT_DEV_DOMAIN}`;
   }
-  return `http://localhost:${process.env.PORT || 5000}`;
+  return `http://localhost:${process.env.PORT || "5000"}`;
+}
+
+function mcpError(message: string) {
+  return { content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }], isError: true };
+}
+
+function mcpSuccess(data: unknown) {
+  return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
 }
 
 app.use("/reports", express.static(path.join(process.cwd(), "reports"), {
@@ -67,8 +74,13 @@ function createMcpServer(): McpServer {
       limit: z.number().optional().describe("Results to return. Default 10."),
     },
     async (params) => {
-      const result = await searchContractors(params);
-      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      try {
+        const result = await searchContractors(params);
+        return mcpSuccess(result);
+      } catch (error) {
+        console.error("search_contractors error:", error);
+        return mcpError("Failed to search contractors");
+      }
     }
   );
 
@@ -77,9 +89,14 @@ function createMcpServer(): McpServer {
     "Get full profile for a specific contractor by ID, including contact details.",
     { id: z.string().describe("Contractor UUID") },
     async ({ id }) => {
-      const contractor = await getContractor(id);
-      if (!contractor) return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Contractor not found" }) }], isError: true };
-      return { content: [{ type: "text" as const, text: JSON.stringify(contractor, null, 2) }] };
+      try {
+        const contractor = await getContractor(id);
+        if (!contractor) return mcpError("Contractor not found");
+        return mcpSuccess(contractor);
+      } catch (error) {
+        console.error("get_contractor error:", error);
+        return mcpError("Failed to retrieve contractor");
+      }
     }
   );
 
@@ -88,9 +105,14 @@ function createMcpServer(): McpServer {
     "Get complete CV for a contractor including work history, education, notable projects, languages, and full contact details.",
     { id: z.string().describe("Contractor UUID") },
     async ({ id }) => {
-      const cv = await getContractorCV(id);
-      if (!cv) return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Contractor not found" }) }], isError: true };
-      return { content: [{ type: "text" as const, text: JSON.stringify(cv, null, 2) }] };
+      try {
+        const cv = await getContractorCV(id);
+        if (!cv) return mcpError("Contractor not found");
+        return mcpSuccess(cv);
+      } catch (error) {
+        console.error("get_contractor_cv error:", error);
+        return mcpError("Failed to retrieve contractor CV");
+      }
     }
   );
 
@@ -105,8 +127,13 @@ function createMcpServer(): McpServer {
       limit: z.number().optional().describe("Max results. Default 20."),
     },
     async (params) => {
-      const result = await listJobs(params);
-      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      try {
+        const result = await listJobs(params);
+        return mcpSuccess(result);
+      } catch (error) {
+        console.error("list_jobs error:", error);
+        return mcpError("Failed to list jobs");
+      }
     }
   );
 
@@ -115,9 +142,14 @@ function createMcpServer(): McpServer {
     "Get full details for a specific job by ID.",
     { id: z.string().describe("Job UUID") },
     async ({ id }) => {
-      const job = await getJob(id);
-      if (!job) return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Job not found" }) }], isError: true };
-      return { content: [{ type: "text" as const, text: JSON.stringify(job, null, 2) }] };
+      try {
+        const job = await getJob(id);
+        if (!job) return mcpError("Job not found");
+        return mcpSuccess(job);
+      } catch (error) {
+        console.error("get_job error:", error);
+        return mcpError("Failed to retrieve job");
+      }
     }
   );
 
@@ -129,8 +161,14 @@ function createMcpServer(): McpServer {
       limit: z.number().optional().describe("Max results. Default 10."),
     },
     async ({ job_id, limit }) => {
-      const result = await findMatchingContractors(job_id, limit);
-      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      try {
+        const result = await findMatchingContractors(job_id, limit);
+        if ("error" in result) return mcpError(result.error);
+        return mcpSuccess(result);
+      } catch (error) {
+        console.error("find_matching_contractors error:", error);
+        return mcpError("Failed to find matching contractors");
+      }
     }
   );
 
@@ -144,8 +182,13 @@ function createMcpServer(): McpServer {
       client_name: z.string().optional().describe("Client name"),
     },
     async (params) => {
-      const result = await createShortlist(params);
-      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      try {
+        const result = await createShortlist(params);
+        return mcpSuccess(result);
+      } catch (error) {
+        console.error("create_shortlist error:", error);
+        return mcpError("Failed to create shortlist");
+      }
     }
   );
 
@@ -158,8 +201,14 @@ function createMcpServer(): McpServer {
       notes: z.string().optional().describe("Notes about why this contractor is a good fit"),
     },
     async (params) => {
-      const result = await addToShortlist(params);
-      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      try {
+        const result = await addToShortlist(params);
+        if ("error" in result) return mcpError(result.error);
+        return mcpSuccess(result);
+      } catch (error) {
+        console.error("add_to_shortlist error:", error);
+        return mcpError("Failed to add contractor to shortlist");
+      }
     }
   );
 
@@ -168,9 +217,14 @@ function createMcpServer(): McpServer {
     "Get a shortlist with all its candidate contractors and their status.",
     { id: z.string().describe("Shortlist UUID") },
     async ({ id }) => {
-      const result = await getShortlist(id);
-      if (!result) return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Shortlist not found" }) }], isError: true };
-      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      try {
+        const result = await getShortlist(id);
+        if (!result) return mcpError("Shortlist not found");
+        return mcpSuccess(result);
+      } catch (error) {
+        console.error("get_shortlist error:", error);
+        return mcpError("Failed to retrieve shortlist");
+      }
     }
   );
 
@@ -179,8 +233,13 @@ function createMcpServer(): McpServer {
     "List all shortlists, optionally filtered by status.",
     { status: z.enum(["active", "closed", "filled"]).optional().describe("Filter by status") },
     async ({ status }) => {
-      const result = await listShortlists(status);
-      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      try {
+        const result = await listShortlists(status);
+        return mcpSuccess(result);
+      } catch (error) {
+        console.error("list_shortlists error:", error);
+        return mcpError("Failed to list shortlists");
+      }
     }
   );
 
@@ -193,8 +252,14 @@ function createMcpServer(): McpServer {
       status: z.enum(["shortlisted", "contacted", "interviewing", "offered", "accepted", "declined", "withdrawn"]).describe("New status"),
     },
     async (params) => {
-      const result = await updateShortlistItemStatus(params);
-      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      try {
+        const result = await updateShortlistItemStatus(params);
+        if ("error" in result) return mcpError(result.error);
+        return mcpSuccess(result);
+      } catch (error) {
+        console.error("update_candidate_status error:", error);
+        return mcpError("Failed to update candidate status");
+      }
     }
   );
 
@@ -208,8 +273,14 @@ function createMcpServer(): McpServer {
       body: z.string().describe("Email body text"),
     },
     async (params) => {
-      const result = await draftOutreach(params);
-      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      try {
+        const result = await draftOutreach(params);
+        if ("error" in result) return mcpError(result.error);
+        return mcpSuccess(result);
+      } catch (error) {
+        console.error("draft_outreach error:", error);
+        return mcpError("Failed to save outreach draft");
+      }
     }
   );
 
@@ -221,8 +292,13 @@ function createMcpServer(): McpServer {
       status: z.enum(["draft", "sent", "replied"]).optional().describe("Filter by status"),
     },
     async (params) => {
-      const result = await listOutreach(params);
-      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      try {
+        const result = await listOutreach(params);
+        return mcpSuccess(result);
+      } catch (error) {
+        console.error("list_outreach error:", error);
+        return mcpError("Failed to list outreach drafts");
+      }
     }
   );
 
@@ -240,8 +316,14 @@ function createMcpServer(): McpServer {
       notes: z.string().optional().describe("Booking notes"),
     },
     async (params) => {
-      const result = await bookContractor(params);
-      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      try {
+        const result = await bookContractor(params);
+        if ("error" in result) return mcpError(result.error);
+        return mcpSuccess(result);
+      } catch (error) {
+        console.error("book_contractor error:", error);
+        return mcpError("Failed to book contractor");
+      }
     }
   );
 
@@ -250,8 +332,13 @@ function createMcpServer(): McpServer {
     "Get a complete overview of the recruitment pipeline: open jobs, active shortlists, engagements, and pending outreach.",
     {},
     async () => {
-      const result = await getPipeline();
-      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      try {
+        const result = await getPipeline();
+        return mcpSuccess(result);
+      } catch (error) {
+        console.error("get_pipeline error:", error);
+        return mcpError("Failed to retrieve pipeline overview");
+      }
     }
   );
 
@@ -263,8 +350,14 @@ function createMcpServer(): McpServer {
       status: z.enum(["open", "shortlisting", "interviewing", "offered", "filled", "cancelled"]).describe("New status"),
     },
     async ({ id, status }) => {
-      const result = await updateJobStatus(id, status);
-      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      try {
+        const result = await updateJobStatus(id, status);
+        if ("error" in result) return mcpError(result.error);
+        return mcpSuccess(result);
+      } catch (error) {
+        console.error("update_job_status error:", error);
+        return mcpError("Failed to update job status");
+      }
     }
   );
 
@@ -272,11 +365,16 @@ function createMcpServer(): McpServer {
     "generate_contractor_pdf",
     "Generate a downloadable PDF report for a contractor with their full CV, work history, education, certifications, skills, and contact details. Returns a download URL.",
     { contractor_id: z.string().describe("Contractor UUID") },
-    async ({ contractor_id }, extra) => {
-      const baseUrl = getBaseUrl();
-      const result = await generateContractorPDF(contractor_id, baseUrl);
-      if ("error" in result) return { content: [{ type: "text" as const, text: JSON.stringify(result) }], isError: true };
-      return { content: [{ type: "text" as const, text: JSON.stringify({ message: `PDF report generated for contractor`, download_url: result.url, filename: result.filename }, null, 2) }] };
+    async ({ contractor_id }) => {
+      try {
+        const baseUrl = getBaseUrl();
+        const result = await generateContractorPDF(contractor_id, baseUrl);
+        if ("error" in result) return mcpError(result.error);
+        return mcpSuccess({ message: "PDF report generated for contractor", download_url: result.url, filename: result.filename });
+      } catch (error) {
+        console.error("generate_contractor_pdf error:", error);
+        return mcpError("Failed to generate contractor PDF");
+      }
     }
   );
 
@@ -285,10 +383,15 @@ function createMcpServer(): McpServer {
     "Generate a downloadable PDF report for a shortlist showing all candidates, their profiles, status, and notes. Returns a download URL.",
     { shortlist_id: z.string().describe("Shortlist UUID") },
     async ({ shortlist_id }) => {
-      const baseUrl = getBaseUrl();
-      const result = await generateShortlistPDF(shortlist_id, baseUrl);
-      if ("error" in result) return { content: [{ type: "text" as const, text: JSON.stringify(result) }], isError: true };
-      return { content: [{ type: "text" as const, text: JSON.stringify({ message: `PDF shortlist report generated`, download_url: result.url, filename: result.filename }, null, 2) }] };
+      try {
+        const baseUrl = getBaseUrl();
+        const result = await generateShortlistPDF(shortlist_id, baseUrl);
+        if ("error" in result) return mcpError(result.error);
+        return mcpSuccess({ message: "PDF shortlist report generated", download_url: result.url, filename: result.filename });
+      } catch (error) {
+        console.error("generate_shortlist_pdf error:", error);
+        return mcpError("Failed to generate shortlist PDF");
+      }
     }
   );
 
@@ -297,10 +400,15 @@ function createMcpServer(): McpServer {
     "Generate a downloadable PDF comparing multiple contractors side-by-side. Shows rates, experience, certifications, skills, and ratings in a table format. Returns a download URL.",
     { contractor_ids: z.array(z.string()).min(2).max(10).describe("Array of 2-10 Contractor UUIDs to compare") },
     async ({ contractor_ids }) => {
-      const baseUrl = getBaseUrl();
-      const result = await generateComparisonPDF(contractor_ids, baseUrl);
-      if ("error" in result) return { content: [{ type: "text" as const, text: JSON.stringify(result) }], isError: true };
-      return { content: [{ type: "text" as const, text: JSON.stringify({ message: `PDF comparison report generated for ${contractor_ids.length} contractors`, download_url: result.url, filename: result.filename }, null, 2) }] };
+      try {
+        const baseUrl = getBaseUrl();
+        const result = await generateComparisonPDF(contractor_ids, baseUrl);
+        if ("error" in result) return mcpError(result.error);
+        return mcpSuccess({ message: `PDF comparison report generated for ${contractor_ids.length} contractors`, download_url: result.url, filename: result.filename });
+      } catch (error) {
+        console.error("generate_comparison_pdf error:", error);
+        return mcpError("Failed to generate comparison PDF");
+      }
     }
   );
 
@@ -385,7 +493,7 @@ app.get("/", (_req, res) => {
 
 const PORT = parseInt(process.env.PORT || "5000", 10);
 
-async function main() {
+async function main(): Promise<void> {
   await initDatabase();
   await seedIfEmpty();
   app.listen(PORT, "0.0.0.0", () => {

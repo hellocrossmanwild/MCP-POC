@@ -12,6 +12,16 @@ interface GoogleUser {
   picture?: string;
 }
 
+interface GoogleUserInfoResponse {
+  email?: string;
+  name?: string;
+  picture?: string;
+}
+
+export interface AuthenticatedRequest extends Request {
+  userEmail?: string;
+}
+
 export async function verifyGoogleToken(token: string): Promise<GoogleUser | null> {
   try {
     const ticket = await oauthClient.verifyIdToken({
@@ -31,7 +41,7 @@ export async function verifyGoogleToken(token: string): Promise<GoogleUser | nul
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) return null;
-      const data = await res.json() as { email?: string; name?: string; picture?: string };
+      const data = await res.json() as GoogleUserInfoResponse;
       if (!data.email) return null;
       return { email: data.email, name: data.name, picture: data.picture };
     } catch {
@@ -48,7 +58,7 @@ export async function isUserAllowed(email: string): Promise<boolean> {
   return result.rows.length > 0;
 }
 
-export async function validateUser(token: string): Promise<{ allowed: boolean; email?: string }> {
+async function validateUser(token: string): Promise<{ allowed: boolean; email?: string }> {
   const user = await verifyGoogleToken(token);
   if (!user?.email) {
     return { allowed: false };
@@ -57,24 +67,13 @@ export async function validateUser(token: string): Promise<{ allowed: boolean; e
   return { allowed, email: user.email };
 }
 
-function getBaseUrl(req: Request): string {
-  if (req.headers.host) {
-    const proto = req.headers["x-forwarded-proto"] || "https";
-    return `${proto}://${req.headers.host}`;
-  }
-  if (process.env.REPLIT_DEPLOYMENT_URL) {
-    return `https://${process.env.REPLIT_DEPLOYMENT_URL}`;
-  }
-  if (process.env.REPLIT_DEV_DOMAIN) {
-    return `https://${process.env.REPLIT_DEV_DOMAIN}`;
-  }
-  return `http://localhost:${process.env.PORT || 5000}`;
-}
-
 export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith("Bearer ")) {
-    const baseUrl = getBaseUrl(req);
+    const proto = req.headers["x-forwarded-proto"] || "https";
+    const baseUrl = req.headers.host
+      ? `${proto}://${req.headers.host}`
+      : `http://localhost:${process.env.PORT || "5000"}`;
     res.status(401)
       .set("WWW-Authenticate", `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource"`)
       .json({ error: "Unauthorized" });
@@ -85,7 +84,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
 
   const apiKey = process.env.MCP_API_KEY;
   if (apiKey && token === apiKey) {
-    (req as any).userEmail = "api-key-user";
+    (req as AuthenticatedRequest).userEmail = "api-key-user";
     next();
     return;
   }
@@ -96,7 +95,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
         res.status(403).json({ error: "Access denied. Your email is not on the allowed list." });
         return;
       }
-      (req as any).userEmail = email;
+      (req as AuthenticatedRequest).userEmail = email;
       next();
     })
     .catch(() => {

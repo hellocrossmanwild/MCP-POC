@@ -42,4 +42,4 @@ build = ["npm", "run", "build"]
 [userenv]
 
 [userenv.shared]
-MCP_API_KEY = "befe08de059172c00ee6c56f164ebc7c80ee3d9e87569dd155387e8204c6315b"
+# Set MCP_API_KEY in your Replit Secrets, not here

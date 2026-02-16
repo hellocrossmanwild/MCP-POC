@@ -1,5 +1,24 @@
 import { pool, initDatabase } from "./db.js";
 
+interface EducationEntry {
+  institution: string;
+  degree: string;
+  year: number;
+}
+
+interface WorkHistoryEntry {
+  company: string;
+  role: string;
+  period: string;
+  description: string;
+}
+
+interface ProjectEntry {
+  name: string;
+  client: string;
+  description: string;
+}
+
 interface ContractorSeed {
   name: string;
   initials: string;
@@ -19,9 +38,9 @@ interface ContractorSeed {
   email: string;
   phone: string;
   linkedin_url: string;
-  education: object[];
-  work_history: object[];
-  notable_projects: object[];
+  education: EducationEntry[];
+  work_history: WorkHistoryEntry[];
+  notable_projects: ProjectEntry[];
   languages: string[];
 }
 
