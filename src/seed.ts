@@ -59,13 +59,10 @@ const technologyContractors = [
   { name: "Oscar Grant", initials: "OG", title: "API Security Specialist", bio: "API security expert for tech platforms. Specialises in OAuth flows, API gateway security and microservices protection.", location: "Manchester", day_rate: 600, years_experience: 8, availability: "available", certifications: ["ISO 27001", "CISSP", "OSCP"], sectors: ["Technology", "SaaS", "Fintech"], skills: ["API Security", "OAuth", "API Gateway", "Microservices Security"], rating: 4.5, review_count: 13, placement_count: 24, security_clearance: null },
 ];
 
-async function seed() {
-  await initDatabase();
-
+export async function seedIfEmpty(): Promise<void> {
   const existing = await pool.query("SELECT COUNT(*) as count FROM contractors");
   if (parseInt(existing.rows[0].count, 10) > 0) {
     console.log(`Database already has ${existing.rows[0].count} contractors. Skipping seed.`);
-    await pool.end();
     return;
   }
 
@@ -84,7 +81,12 @@ async function seed() {
   }
 
   console.log(`Seeded ${allContractors.length} contractors.`);
-  await pool.end();
 }
 
-seed().catch(console.error);
+const isDirectRun = process.argv[1]?.endsWith("seed.ts") || process.argv[1]?.endsWith("seed.js");
+if (isDirectRun) {
+  initDatabase()
+    .then(() => seedIfEmpty())
+    .then(() => pool.end())
+    .catch(console.error);
+}

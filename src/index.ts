@@ -6,6 +6,7 @@ import { z } from "zod";
 import { initDatabase } from "./db.js";
 import { authMiddleware } from "./auth.js";
 import { searchContractors, getContractor } from "./tools.js";
+import { seedIfEmpty } from "./seed.js";
 
 const app = express();
 app.use(express.json());
@@ -156,6 +157,7 @@ const PORT = parseInt(process.env.PORT || "5000", 10);
 
 async function main() {
   await initDatabase();
+  await seedIfEmpty();
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`MCP Server running on http://0.0.0.0:${PORT}`);
     console.log(`Base URL: ${getBaseUrl()}`);
