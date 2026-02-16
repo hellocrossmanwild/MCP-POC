@@ -36,7 +36,7 @@ src/
 - `GET /health` - Health check
 - `GET /` - Server info with tool listing
 
-## MCP Tools (16 total)
+## MCP Tools (19 total)
 
 ### Search & Discovery
 1. **search_contractors** - Search by location, availability, certifications, skills, sector, max rate, clearance, experience, free text
@@ -64,6 +64,11 @@ src/
 15. **book_contractor** - Book contractor for role (creates engagement, marks as unavailable)
 16. **get_pipeline** - Full recruitment pipeline overview: open jobs, active shortlists, engagements, pending outreach
 
+### PDF Reports
+17. **generate_contractor_pdf** - Generate downloadable PDF with full contractor CV, work history, education, contact details
+18. **generate_shortlist_pdf** - Generate downloadable PDF report of a shortlist with all candidates and status
+19. **generate_comparison_pdf** - Generate downloadable PDF comparing 2-10 contractors side-by-side (rates, skills, certs, ratings)
+
 ## Environment Variables Required
 - `DATABASE_URL` - PostgreSQL connection string (auto-set by Replit)
 - `GOOGLE_CLIENT_ID` - Google OAuth client ID
@@ -71,6 +76,7 @@ src/
 - `SESSION_SECRET` - Session secret
 
 ## Recent Changes
+- 2026-02-16: v2.1 - Added PDF report generation: contractor CVs, shortlist reports, comparison documents (19 tools)
 - 2026-02-16: v2.0 - Full lifecycle: enriched CVs, jobs, shortlists, outreach, booking, pipeline (16 tools)
 - 2026-02-16: Auto-seed on startup for production deployment
 - 2026-02-15: Initial build - database schema, seed data, MCP server with auth

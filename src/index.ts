@@ -12,7 +12,9 @@ import {
   draftOutreach, listOutreach,
   bookContractor, getPipeline, updateJobStatus,
 } from "./tools.js";
+import { generateContractorPDF, generateShortlistPDF, generateComparisonPDF } from "./pdf.js";
 import { seedIfEmpty } from "./seed.js";
+import path from "path";
 
 const app = express();
 app.use(express.json());
@@ -30,6 +32,13 @@ function getBaseUrl(req?: express.Request): string {
   }
   return `http://localhost:${process.env.PORT || 5000}`;
 }
+
+app.use("/reports", express.static(path.join(process.cwd(), "reports"), {
+  setHeaders: (res) => {
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Cache-Control", "no-cache");
+  },
+}));
 
 app.use((req, _res, next) => {
   console.log(`${req.method} ${req.path} [${req.headers.authorization ? "auth" : "no-auth"}]`);
@@ -259,6 +268,42 @@ function createMcpServer(): McpServer {
     }
   );
 
+  server.tool(
+    "generate_contractor_pdf",
+    "Generate a downloadable PDF report for a contractor with their full CV, work history, education, certifications, skills, and contact details. Returns a download URL.",
+    { contractor_id: z.string().describe("Contractor UUID") },
+    async ({ contractor_id }, extra) => {
+      const baseUrl = getBaseUrl();
+      const result = await generateContractorPDF(contractor_id, baseUrl);
+      if ("error" in result) return { content: [{ type: "text" as const, text: JSON.stringify(result) }], isError: true };
+      return { content: [{ type: "text" as const, text: JSON.stringify({ message: `PDF report generated for contractor`, download_url: result.url, filename: result.filename }, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "generate_shortlist_pdf",
+    "Generate a downloadable PDF report for a shortlist showing all candidates, their profiles, status, and notes. Returns a download URL.",
+    { shortlist_id: z.string().describe("Shortlist UUID") },
+    async ({ shortlist_id }) => {
+      const baseUrl = getBaseUrl();
+      const result = await generateShortlistPDF(shortlist_id, baseUrl);
+      if ("error" in result) return { content: [{ type: "text" as const, text: JSON.stringify(result) }], isError: true };
+      return { content: [{ type: "text" as const, text: JSON.stringify({ message: `PDF shortlist report generated`, download_url: result.url, filename: result.filename }, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "generate_comparison_pdf",
+    "Generate a downloadable PDF comparing multiple contractors side-by-side. Shows rates, experience, certifications, skills, and ratings in a table format. Returns a download URL.",
+    { contractor_ids: z.array(z.string()).min(2).max(10).describe("Array of 2-10 Contractor UUIDs to compare") },
+    async ({ contractor_ids }) => {
+      const baseUrl = getBaseUrl();
+      const result = await generateComparisonPDF(contractor_ids, baseUrl);
+      if ("error" in result) return { content: [{ type: "text" as const, text: JSON.stringify(result) }], isError: true };
+      return { content: [{ type: "text" as const, text: JSON.stringify({ message: `PDF comparison report generated for ${contractor_ids.length} contractors`, download_url: result.url, filename: result.filename }, null, 2) }] };
+    }
+  );
+
   return server;
 }
 
@@ -328,6 +373,7 @@ app.get("/", (_req, res) => {
       "create_shortlist", "add_to_shortlist", "get_shortlist", "list_shortlists", "update_candidate_status",
       "draft_outreach", "list_outreach",
       "book_contractor", "get_pipeline", "update_job_status",
+      "generate_contractor_pdf", "generate_shortlist_pdf", "generate_comparison_pdf",
     ],
     endpoints: {
       sse: "/sse",
@@ -345,7 +391,7 @@ async function main() {
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`MCP Server v2.0.0 running on http://0.0.0.0:${PORT}`);
     console.log(`Base URL: ${getBaseUrl()}`);
-    console.log(`16 MCP tools registered`);
+    console.log(`19 MCP tools registered`);
     console.log(`SSE endpoint: /sse`);
     console.log(`Streamable HTTP endpoint: /mcp`);
   });
