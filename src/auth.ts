@@ -1,6 +1,8 @@
 import { OAuth2Client } from "google-auth-library";
 import { pool } from "./db.js";
-import { Request, Response, NextFunction } from "express";
+import type { Response, NextFunction } from "express";
+import type { AuthenticatedRequest } from "./types.js";
+import { getBaseUrl } from "./types.js";
 
 const googleClientId = process.env.GOOGLE_CLIENT_ID;
 
@@ -8,6 +10,12 @@ const oauthClient = new OAuth2Client(googleClientId);
 
 interface GoogleUser {
   email: string;
+  name?: string;
+  picture?: string;
+}
+
+interface UserInfoResponse {
+  email?: string;
   name?: string;
   picture?: string;
 }
@@ -31,7 +39,7 @@ export async function verifyGoogleToken(token: string): Promise<GoogleUser | nul
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) return null;
-      const data = await res.json() as { email?: string; name?: string; picture?: string };
+      const data = (await res.json()) as UserInfoResponse;
       if (!data.email) return null;
       return { email: data.email, name: data.name, picture: data.picture };
     } catch {
@@ -57,21 +65,7 @@ export async function validateUser(token: string): Promise<{ allowed: boolean; e
   return { allowed, email: user.email };
 }
 
-function getBaseUrl(req: Request): string {
-  if (req.headers.host) {
-    const proto = req.headers["x-forwarded-proto"] || "https";
-    return `${proto}://${req.headers.host}`;
-  }
-  if (process.env.REPLIT_DEPLOYMENT_URL) {
-    return `https://${process.env.REPLIT_DEPLOYMENT_URL}`;
-  }
-  if (process.env.REPLIT_DEV_DOMAIN) {
-    return `https://${process.env.REPLIT_DEV_DOMAIN}`;
-  }
-  return `http://localhost:${process.env.PORT || 5000}`;
-}
-
-export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
+export function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith("Bearer ")) {
     const baseUrl = getBaseUrl(req);
@@ -85,7 +79,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
 
   const apiKey = process.env.MCP_API_KEY;
   if (apiKey && token === apiKey) {
-    (req as any).userEmail = "api-key-user";
+    req.userEmail = "api-key-user";
     next();
     return;
   }
@@ -96,7 +90,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
         res.status(403).json({ error: "Access denied. Your email is not on the allowed list." });
         return;
       }
-      (req as any).userEmail = email;
+      req.userEmail = email;
       next();
     })
     .catch(() => {

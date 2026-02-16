@@ -2,10 +2,11 @@ import PDFDocument from "pdfkit";
 import { pool } from "./db.js";
 import fs from "fs";
 import path from "path";
+import type { ContractorRow, WorkHistoryEntry, EducationEntry, ProjectEntry } from "./types.js";
 
 const REPORTS_DIR = path.join(process.cwd(), "reports");
 
-function ensureReportsDir() {
+function ensureReportsDir(): void {
   if (!fs.existsSync(REPORTS_DIR)) {
     fs.mkdirSync(REPORTS_DIR, { recursive: true });
   }
@@ -16,7 +17,7 @@ function formatDate(date: string | Date | null): string {
   return new Date(date).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 }
 
-function drawHeader(doc: PDFKit.PDFDocument, title: string, subtitle?: string) {
+function drawHeader(doc: PDFKit.PDFDocument, title: string, subtitle?: string): void {
   doc.rect(0, 0, doc.page.width, 80).fill("#1a1a2e");
   doc.fillColor("#ffffff").fontSize(22).font("Helvetica-Bold").text(title, 40, 25, { width: doc.page.width - 80 });
   if (subtitle) {
@@ -26,7 +27,7 @@ function drawHeader(doc: PDFKit.PDFDocument, title: string, subtitle?: string) {
   doc.y = 100;
 }
 
-function drawSectionTitle(doc: PDFKit.PDFDocument, title: string) {
+function drawSectionTitle(doc: PDFKit.PDFDocument, title: string): void {
   doc.moveDown(0.5);
   const y = doc.y;
   doc.rect(40, y, 3, 16).fill("#4a90d9");
@@ -35,19 +36,19 @@ function drawSectionTitle(doc: PDFKit.PDFDocument, title: string) {
   doc.moveDown(0.3);
 }
 
-function drawKeyValue(doc: PDFKit.PDFDocument, key: string, value: string, x = 50) {
+function drawKeyValue(doc: PDFKit.PDFDocument, key: string, value: string, x = 50): void {
   doc.font("Helvetica-Bold").text(`${key}: `, x, doc.y, { continued: true });
   doc.font("Helvetica").text(value);
 }
 
-function drawDivider(doc: PDFKit.PDFDocument) {
+function drawDivider(doc: PDFKit.PDFDocument): void {
   doc.moveDown(0.3);
   const y = doc.y;
   doc.moveTo(40, y).lineTo(doc.page.width - 40, y).strokeColor("#e0e0e0").lineWidth(0.5).stroke();
   doc.moveDown(0.3);
 }
 
-function drawFooter(doc: PDFKit.PDFDocument) {
+function drawFooter(doc: PDFKit.PDFDocument): void {
   const y = doc.page.height - 40;
   doc.fontSize(8).fillColor("#999999")
     .text(`Generated ${new Date().toLocaleString("en-GB")} | Contractor Search MCP`, 40, y, { width: doc.page.width - 80, align: "center" });
@@ -60,7 +61,7 @@ export async function generateContractorPDF(contractorId: string, baseUrl: strin
   );
   if (result.rows.length === 0) return { error: "Contractor not found" };
 
-  const c = result.rows[0];
+  const c: ContractorRow = result.rows[0];
   ensureReportsDir();
 
   const filename = `contractor-${c.name.toLowerCase().replace(/\s+/g, "-")}-${Date.now()}.pdf`;
@@ -75,11 +76,11 @@ export async function generateContractorPDF(contractorId: string, baseUrl: strin
 
     drawSectionTitle(doc, "Profile Summary");
     drawKeyValue(doc, "Location", c.location);
-    drawKeyValue(doc, "Day Rate", `£${parseInt(c.day_rate).toLocaleString()}`);
+    drawKeyValue(doc, "Day Rate", `\u00A3${parseInt(String(c.day_rate)).toLocaleString()}`);
     drawKeyValue(doc, "Experience", `${c.years_experience} years`);
     drawKeyValue(doc, "Availability", c.availability === "available" ? "Available now" : c.availability === "within_30" ? `Available from ${formatDate(c.available_from)}` : c.availability);
     drawKeyValue(doc, "Security Clearance", c.security_clearance || "None");
-    if (c.rating) drawKeyValue(doc, "Rating", `${parseFloat(c.rating).toFixed(1)}/5 (${c.review_count} reviews, ${c.placement_count} placements)`);
+    if (c.rating) drawKeyValue(doc, "Rating", `${parseFloat(String(c.rating)).toFixed(1)}/5 (${c.review_count} reviews, ${c.placement_count} placements)`);
 
     drawDivider(doc);
 
@@ -99,29 +100,29 @@ export async function generateContractorPDF(contractorId: string, baseUrl: strin
 
     if (c.certifications?.length > 0) {
       drawSectionTitle(doc, "Certifications");
-      doc.fontSize(10).text(c.certifications.join("  •  "), 50, doc.y, { width: doc.page.width - 100 });
+      doc.fontSize(10).text(c.certifications.join("  \u2022  "), 50, doc.y, { width: doc.page.width - 100 });
     }
 
     if (c.skills?.length > 0) {
       drawSectionTitle(doc, "Skills");
-      doc.fontSize(10).text(c.skills.join("  •  "), 50, doc.y, { width: doc.page.width - 100 });
+      doc.fontSize(10).text(c.skills.join("  \u2022  "), 50, doc.y, { width: doc.page.width - 100 });
     }
 
     if (c.sectors?.length > 0) {
       drawSectionTitle(doc, "Sectors");
-      doc.fontSize(10).text(c.sectors.join("  •  "), 50, doc.y, { width: doc.page.width - 100 });
+      doc.fontSize(10).text(c.sectors.join("  \u2022  "), 50, doc.y, { width: doc.page.width - 100 });
     }
 
     drawDivider(doc);
 
     if (c.work_history && c.work_history.length > 0) {
       drawSectionTitle(doc, "Work History");
-      for (const job of c.work_history) {
+      for (const job of c.work_history as WorkHistoryEntry[]) {
         if (doc.y > doc.page.height - 120) {
           doc.addPage();
           drawFooter(doc);
         }
-        doc.font("Helvetica-Bold").fontSize(10).text(`${job.role} — ${job.company}`, 50, doc.y);
+        doc.font("Helvetica-Bold").fontSize(10).text(`${job.role} \u2014 ${job.company}`, 50, doc.y);
         doc.font("Helvetica").fontSize(9).fillColor("#666666").text(job.period, 50, doc.y);
         doc.fillColor("#333333").fontSize(9).text(job.description, 50, doc.y, { width: doc.page.width - 100 });
         doc.moveDown(0.5);
@@ -130,8 +131,8 @@ export async function generateContractorPDF(contractorId: string, baseUrl: strin
 
     if (c.education && c.education.length > 0) {
       drawSectionTitle(doc, "Education");
-      for (const edu of c.education) {
-        doc.font("Helvetica-Bold").fontSize(10).text(`${edu.degree} — ${edu.institution}`, 50, doc.y);
+      for (const edu of c.education as EducationEntry[]) {
+        doc.font("Helvetica-Bold").fontSize(10).text(`${edu.degree} \u2014 ${edu.institution}`, 50, doc.y);
         if (edu.year) doc.font("Helvetica").fontSize(9).fillColor("#666666").text(edu.year.toString(), 50, doc.y);
         doc.fillColor("#333333");
         doc.moveDown(0.3);
@@ -141,7 +142,7 @@ export async function generateContractorPDF(contractorId: string, baseUrl: strin
     if (c.notable_projects && c.notable_projects.length > 0) {
       if (doc.y > doc.page.height - 150) doc.addPage();
       drawSectionTitle(doc, "Notable Projects");
-      for (const proj of c.notable_projects) {
+      for (const proj of c.notable_projects as ProjectEntry[]) {
         if (doc.y > doc.page.height - 100) {
           doc.addPage();
           drawFooter(doc);
@@ -154,7 +155,7 @@ export async function generateContractorPDF(contractorId: string, baseUrl: strin
 
     if (c.languages?.length > 0) {
       drawSectionTitle(doc, "Languages");
-      doc.fontSize(10).text(c.languages.join("  •  "), 50, doc.y, { width: doc.page.width - 100 });
+      doc.fontSize(10).text(c.languages.join("  \u2022  "), 50, doc.y, { width: doc.page.width - 100 });
     }
 
     drawFooter(doc);
@@ -193,7 +194,7 @@ export async function generateShortlistPDF(shortlistId: string, baseUrl: string)
     const stream = fs.createWriteStream(filepath);
     doc.pipe(stream);
 
-    drawHeader(doc, sl.name, `${sl.role_title || ""}${sl.client_name ? ` — ${sl.client_name}` : ""} | ${items.rows.length} candidates`);
+    drawHeader(doc, sl.name, `${sl.role_title || ""}${sl.client_name ? ` \u2014 ${sl.client_name}` : ""} | ${items.rows.length} candidates`);
 
     if (sl.description) {
       doc.fontSize(10).text(sl.description, 50, doc.y, { width: doc.page.width - 100 });
@@ -220,7 +221,7 @@ export async function generateShortlistPDF(shortlistId: string, baseUrl: string)
       doc.fillColor("#333333");
 
       drawKeyValue(doc, "Location", candidate.location);
-      drawKeyValue(doc, "Day Rate", `£${parseInt(candidate.day_rate).toLocaleString()}`);
+      drawKeyValue(doc, "Day Rate", `\u00A3${parseInt(candidate.day_rate).toLocaleString()}`);
       drawKeyValue(doc, "Experience", `${candidate.years_experience} years`);
       drawKeyValue(doc, "Availability", candidate.availability === "available" ? "Available now" : candidate.availability);
       drawKeyValue(doc, "Security Clearance", candidate.security_clearance || "None");
@@ -251,6 +252,27 @@ export async function generateShortlistPDF(shortlistId: string, baseUrl: string)
   });
 }
 
+interface ComparisonContractor {
+  id: string;
+  name: string;
+  title: string;
+  location: string;
+  day_rate: string | number;
+  years_experience: string | number;
+  availability: string;
+  available_from: string | null;
+  certifications: string[];
+  skills: string[];
+  sectors: string[];
+  rating: string | null;
+  review_count: string | number;
+  placement_count: string | number;
+  security_clearance: string | null;
+  email: string | null;
+  phone: string | null;
+  bio: string | null;
+}
+
 export async function generateComparisonPDF(contractorIds: string[], baseUrl: string): Promise<{ url: string; filename: string } | { error: string }> {
   if (!contractorIds || contractorIds.length < 2) return { error: "Provide at least 2 contractor IDs to compare" };
   if (contractorIds.length > 10) return { error: "Maximum 10 contractors for comparison" };
@@ -266,7 +288,7 @@ export async function generateComparisonPDF(contractorIds: string[], baseUrl: st
 
   if (result.rows.length === 0) return { error: "No contractors found" };
 
-  const contractors = result.rows;
+  const contractors: ComparisonContractor[] = result.rows;
   ensureReportsDir();
   const filename = `comparison-${contractors.length}-contractors-${Date.now()}.pdf`;
   const filepath = path.join(REPORTS_DIR, filename);
@@ -292,17 +314,17 @@ export async function generateComparisonPDF(contractorIds: string[], baseUrl: st
     currentY += 30;
     doc.fillColor("#333333");
 
-    const fields: [string, (c: any) => string][] = [
-      ["Title", c => c.title],
-      ["Location", c => c.location],
-      ["Day Rate", c => `£${parseInt(c.day_rate).toLocaleString()}`],
-      ["Experience", c => `${c.years_experience} years`],
-      ["Availability", c => c.availability === "available" ? "Available now" : c.availability === "within_30" ? `From ${formatDate(c.available_from)}` : c.availability],
-      ["Clearance", c => c.security_clearance || "None"],
-      ["Rating", c => c.rating ? `${parseFloat(c.rating).toFixed(1)}/5` : "N/A"],
-      ["Reviews", c => `${c.review_count}`],
-      ["Placements", c => `${c.placement_count}`],
-      ["Email", c => c.email || "N/A"],
+    const fields: [string, (c: ComparisonContractor) => string][] = [
+      ["Title", (c) => c.title],
+      ["Location", (c) => c.location],
+      ["Day Rate", (c) => `\u00A3${parseInt(String(c.day_rate)).toLocaleString()}`],
+      ["Experience", (c) => `${c.years_experience} years`],
+      ["Availability", (c) => c.availability === "available" ? "Available now" : c.availability === "within_30" ? `From ${formatDate(c.available_from)}` : c.availability],
+      ["Clearance", (c) => c.security_clearance || "None"],
+      ["Rating", (c) => c.rating ? `${parseFloat(String(c.rating)).toFixed(1)}/5` : "N/A"],
+      ["Reviews", (c) => `${c.review_count}`],
+      ["Placements", (c) => `${c.placement_count}`],
+      ["Email", (c) => c.email || "N/A"],
     ];
 
     for (let fi = 0; fi < fields.length; fi++) {
@@ -324,10 +346,10 @@ export async function generateComparisonPDF(contractorIds: string[], baseUrl: st
 
     currentY += 10;
 
-    const listFields: [string, (c: any) => string[]][] = [
-      ["Certifications", c => c.certifications || []],
-      ["Skills", c => c.skills || []],
-      ["Sectors", c => c.sectors || []],
+    const listFields: [string, (c: ComparisonContractor) => string[]][] = [
+      ["Certifications", (c) => c.certifications || []],
+      ["Skills", (c) => c.skills || []],
+      ["Sectors", (c) => c.sectors || []],
     ];
 
     for (const [label, getter] of listFields) {

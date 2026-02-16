@@ -1,4 +1,5 @@
 import { pool } from "./db.js";
+import type { ContractorRow, JobRow } from "./types.js";
 
 interface SearchParams {
   query?: string;
@@ -15,7 +16,7 @@ interface SearchParams {
 
 export async function searchContractors(params: SearchParams) {
   const conditions: string[] = [];
-  const values: any[] = [];
+  const values: (string | number | string[])[] = [];
   let paramIndex = 1;
 
   if (params.location) {
@@ -100,13 +101,13 @@ export async function searchContractors(params: SearchParams) {
   return {
     total_matches: totalMatches,
     showing: dataResult.rows.length,
-    contractors: dataResult.rows.map(row => ({
+    contractors: dataResult.rows.map((row: ContractorRow) => ({
       ...row,
-      day_rate: parseInt(row.day_rate, 10),
-      years_experience: parseInt(row.years_experience, 10),
-      rating: row.rating ? parseFloat(row.rating) : null,
-      review_count: parseInt(row.review_count, 10),
-      placement_count: parseInt(row.placement_count, 10),
+      day_rate: parseInt(String(row.day_rate), 10),
+      years_experience: parseInt(String(row.years_experience), 10),
+      rating: row.rating ? parseFloat(String(row.rating)) : null,
+      review_count: parseInt(String(row.review_count), 10),
+      placement_count: parseInt(String(row.placement_count), 10),
     })),
   };
 }
@@ -123,14 +124,14 @@ export async function getContractor(id: string) {
 
   if (result.rows.length === 0) return null;
 
-  const row = result.rows[0];
+  const row: ContractorRow = result.rows[0];
   return {
     ...row,
-    day_rate: parseInt(row.day_rate, 10),
-    years_experience: parseInt(row.years_experience, 10),
-    rating: row.rating ? parseFloat(row.rating) : null,
-    review_count: parseInt(row.review_count, 10),
-    placement_count: parseInt(row.placement_count, 10),
+    day_rate: parseInt(String(row.day_rate), 10),
+    years_experience: parseInt(String(row.years_experience), 10),
+    rating: row.rating ? parseFloat(String(row.rating)) : null,
+    review_count: parseInt(String(row.review_count), 10),
+    placement_count: parseInt(String(row.placement_count), 10),
   };
 }
 
@@ -147,20 +148,28 @@ export async function getContractorCV(id: string) {
 
   if (result.rows.length === 0) return null;
 
-  const row = result.rows[0];
+  const row: ContractorRow = result.rows[0];
   return {
     ...row,
-    day_rate: parseInt(row.day_rate, 10),
-    years_experience: parseInt(row.years_experience, 10),
-    rating: row.rating ? parseFloat(row.rating) : null,
-    review_count: parseInt(row.review_count, 10),
-    placement_count: parseInt(row.placement_count, 10),
+    day_rate: parseInt(String(row.day_rate), 10),
+    years_experience: parseInt(String(row.years_experience), 10),
+    rating: row.rating ? parseFloat(String(row.rating)) : null,
+    review_count: parseInt(String(row.review_count), 10),
+    placement_count: parseInt(String(row.placement_count), 10),
   };
 }
 
-export async function listJobs(params: { status?: string; sector?: string; urgency?: string; location?: string; limit?: number }) {
+interface ListJobsParams {
+  status?: string;
+  sector?: string;
+  urgency?: string;
+  location?: string;
+  limit?: number;
+}
+
+export async function listJobs(params: ListJobsParams) {
   const conditions: string[] = [];
-  const values: any[] = [];
+  const values: (string | number)[] = [];
   let paramIndex = 1;
 
   if (params.status) {
@@ -200,14 +209,14 @@ export async function listJobs(params: { status?: string; sector?: string; urgen
 
   return {
     total: result.rows.length,
-    jobs: result.rows,
+    jobs: result.rows as JobRow[],
   };
 }
 
 export async function getJob(id: string) {
   const result = await pool.query(`SELECT * FROM jobs WHERE id = $1`, [id]);
   if (result.rows.length === 0) return null;
-  return result.rows[0];
+  return result.rows[0] as JobRow;
 }
 
 export async function findMatchingContractors(jobId: string, limit?: number) {
@@ -215,7 +224,7 @@ export async function findMatchingContractors(jobId: string, limit?: number) {
   if (!job) return { error: "Job not found" };
 
   const conditions: string[] = [];
-  const values: any[] = [];
+  const values: (string | number | string[])[] = [];
   let paramIndex = 1;
 
   if (job.required_certifications && job.required_certifications.length > 0) {
@@ -260,18 +269,18 @@ export async function findMatchingContractors(jobId: string, limit?: number) {
     [...values, job.location, maxResults]
   );
 
-  const contractors = result.rows.map(row => {
+  const contractors = result.rows.map((row: ContractorRow) => {
     const certMatch = job.required_certifications?.filter((c: string) => row.certifications?.includes(c)) || [];
     const skillMatch = job.required_skills?.filter((s: string) => row.skills?.includes(s)) || [];
     return {
       ...row,
-      day_rate: parseInt(row.day_rate, 10),
-      years_experience: parseInt(row.years_experience, 10),
-      rating: row.rating ? parseFloat(row.rating) : null,
+      day_rate: parseInt(String(row.day_rate), 10),
+      years_experience: parseInt(String(row.years_experience), 10),
+      rating: row.rating ? parseFloat(String(row.rating)) : null,
       matching_certifications: certMatch,
       matching_skills: skillMatch,
       location_match: row.location.toLowerCase() === job.location.toLowerCase(),
-      within_budget: row.day_rate <= (job.day_rate_max || Infinity),
+      within_budget: parseInt(String(row.day_rate), 10) <= (job.day_rate_max || Infinity),
     };
   });
 
@@ -282,7 +291,14 @@ export async function findMatchingContractors(jobId: string, limit?: number) {
   };
 }
 
-export async function createShortlist(params: { name: string; description?: string; role_title?: string; client_name?: string; job_id?: string }) {
+interface CreateShortlistParams {
+  name: string;
+  description?: string;
+  role_title?: string;
+  client_name?: string;
+}
+
+export async function createShortlist(params: CreateShortlistParams) {
   const result = await pool.query(
     `INSERT INTO shortlists (name, description, role_title, client_name)
      VALUES ($1, $2, $3, $4)
@@ -292,7 +308,13 @@ export async function createShortlist(params: { name: string; description?: stri
   return result.rows[0];
 }
 
-export async function addToShortlist(params: { shortlist_id: string; contractor_id: string; notes?: string }) {
+interface AddToShortlistParams {
+  shortlist_id: string;
+  contractor_id: string;
+  notes?: string;
+}
+
+export async function addToShortlist(params: AddToShortlistParams) {
   const contractor = await pool.query(`SELECT name, title FROM contractors WHERE id = $1`, [params.contractor_id]);
   if (contractor.rows.length === 0) return { error: "Contractor not found" };
 
@@ -326,13 +348,15 @@ export async function getShortlist(id: string) {
 
   return {
     ...shortlist.rows[0],
-    candidates: items.rows.map(row => ({
+    candidates: items.rows.map((row: ContractorRow & ShortlistItemRow) => ({
       ...row,
-      day_rate: parseInt(row.day_rate, 10),
-      rating: row.rating ? parseFloat(row.rating) : null,
+      day_rate: parseInt(String(row.day_rate), 10),
+      rating: row.rating ? parseFloat(String(row.rating)) : null,
     })),
   };
 }
+
+type ShortlistItemRow = { status: string; notes: string | null; added_at: string; updated_at: string };
 
 export async function listShortlists(status?: string) {
   const query = status
@@ -343,7 +367,13 @@ export async function listShortlists(status?: string) {
   return result.rows;
 }
 
-export async function updateShortlistItemStatus(params: { shortlist_id: string; contractor_id: string; status: string }) {
+interface UpdateShortlistItemStatusParams {
+  shortlist_id: string;
+  contractor_id: string;
+  status: string;
+}
+
+export async function updateShortlistItemStatus(params: UpdateShortlistItemStatusParams) {
   const result = await pool.query(
     `UPDATE shortlist_items SET status = $1, updated_at = NOW()
      WHERE shortlist_id = $2 AND contractor_id = $3
@@ -354,7 +384,14 @@ export async function updateShortlistItemStatus(params: { shortlist_id: string; 
   return result.rows[0];
 }
 
-export async function draftOutreach(params: { contractor_id: string; job_id?: string; shortlist_id?: string; subject: string; body: string }) {
+interface DraftOutreachParams {
+  contractor_id: string;
+  shortlist_id?: string;
+  subject: string;
+  body: string;
+}
+
+export async function draftOutreach(params: DraftOutreachParams) {
   const contractor = await pool.query(`SELECT name, email FROM contractors WHERE id = $1`, [params.contractor_id]);
   if (contractor.rows.length === 0) return { error: "Contractor not found" };
 
@@ -372,9 +409,14 @@ export async function draftOutreach(params: { contractor_id: string; job_id?: st
   };
 }
 
-export async function listOutreach(params?: { contractor_id?: string; status?: string }) {
+interface ListOutreachParams {
+  contractor_id?: string;
+  status?: string;
+}
+
+export async function listOutreach(params?: ListOutreachParams) {
   const conditions: string[] = [];
-  const values: any[] = [];
+  const values: string[] = [];
   let paramIndex = 1;
 
   if (params?.contractor_id) {
@@ -403,7 +445,7 @@ export async function listOutreach(params?: { contractor_id?: string; status?: s
   return result.rows;
 }
 
-export async function bookContractor(params: {
+interface BookContractorParams {
   contractor_id: string;
   role_title: string;
   client_name?: string;
@@ -412,7 +454,9 @@ export async function bookContractor(params: {
   end_date?: string;
   agreed_rate?: number;
   notes?: string;
-}) {
+}
+
+export async function bookContractor(params: BookContractorParams) {
   const contractor = await pool.query(`SELECT name, title, email FROM contractors WHERE id = $1`, [params.contractor_id]);
   if (contractor.rows.length === 0) return { error: "Contractor not found" };
 

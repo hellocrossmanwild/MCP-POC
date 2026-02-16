@@ -4,19 +4,21 @@
 A full-lifecycle MCP (Model Context Protocol) server for managing security contractor recruitment. Supports search, shortlisting, outreach drafting, and booking -- all accessible through Claude Desktop. Backed by PostgreSQL with 50 enriched contractor profiles and 10 sample jobs.
 
 ## Architecture
-- **Runtime:** Node.js 20 + TypeScript
+- **Runtime:** Node.js 20 + TypeScript (strict mode)
 - **MCP SDK:** @modelcontextprotocol/sdk (Streamable HTTP + SSE transports)
-- **Database:** Replit PostgreSQL
-- **Auth:** Google OAuth 2.1 + email allowlist (currently paused for testing)
+- **Database:** Replit PostgreSQL (all queries parameterised)
+- **Auth:** Google OAuth 2.1 + email allowlist + API key auth
 - **Server:** Express.js on port 5000
 
 ## Project Structure
 ```
 src/
-  index.ts    - Express server, 16 MCP tool registrations, SSE + Streamable HTTP transports
+  index.ts    - Express server, 19 MCP tool registrations, SSE + Streamable HTTP transports
+  types.ts    - Shared TypeScript interfaces, constants (SERVER_NAME, SERVER_VERSION), getBaseUrl utility
   db.ts       - Database pool + table initialization (contractors, jobs, shortlists, engagements, outreach)
-  auth.ts     - Google OAuth token verification + allowlist check middleware
+  auth.ts     - Google OAuth token verification + allowlist check middleware (uses AuthenticatedRequest type)
   tools.ts    - All tool query logic (search, CV, jobs, shortlists, outreach, booking, pipeline)
+  pdf.ts      - PDF report generation (contractor CV, shortlist, comparison)
   seed.ts     - Seeds 50 enriched contractors + 10 sample jobs, auto-seeds on startup if empty
 ```
 
@@ -71,11 +73,12 @@ src/
 
 ## Environment Variables Required
 - `DATABASE_URL` - PostgreSQL connection string (auto-set by Replit)
-- `GOOGLE_CLIENT_ID` - Google OAuth client ID
-- `GOOGLE_CLIENT_SECRET` - Google OAuth client secret
-- `SESSION_SECRET` - Session secret
+- `GOOGLE_CLIENT_ID` - Google OAuth client ID (optional, for OAuth auth)
+- `MCP_API_KEY` - API key for direct access (stored as secret)
+- `PORT` - Server port (defaults to 5000)
 
 ## Recent Changes
+- 2026-02-16: Code quality audit — eliminated all `any` types, added TypeScript interfaces (types.ts), consolidated duplicate `getBaseUrl`, removed dead code, added try/catch error handling to all 19 tool handlers, created `.env.example`, improved `.gitignore`
 - 2026-02-16: v2.1 - Added PDF report generation: contractor CVs, shortlist reports, comparison documents (19 tools)
 - 2026-02-16: v2.0 - Full lifecycle: enriched CVs, jobs, shortlists, outreach, booking, pipeline (16 tools)
 - 2026-02-16: Auto-seed on startup for production deployment
