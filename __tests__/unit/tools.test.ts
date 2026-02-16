@@ -8,8 +8,13 @@ import {
 } from "../fixtures.js";
 
 const mockQuery = vi.fn();
+const mockClientQuery = vi.fn();
+const mockClientRelease = vi.fn();
 vi.mock("../../src/db.js", () => ({
-  pool: { query: (...args: unknown[]) => mockQuery(...args) },
+  pool: {
+    query: (...args: unknown[]) => mockQuery(...args),
+    connect: () => Promise.resolve({ query: mockClientQuery, release: mockClientRelease }),
+  },
 }));
 
 const {
@@ -33,6 +38,8 @@ const {
 
 beforeEach(() => {
   mockQuery.mockReset();
+  mockClientQuery.mockReset();
+  mockClientRelease.mockReset();
 });
 
 describe("searchContractors", () => {
@@ -731,11 +738,15 @@ describe("bookContractor", () => {
   });
 
   it("creates engagement and marks contractor unavailable", async () => {
+    // contractor lookup goes through pool.query
     mockQuery
-      .mockResolvedValueOnce(mockQueryResult([{ name: "Sarah", title: "Auditor", email: "s@test.com" }]))
-      .mockResolvedValueOnce(mockQueryResult([{ id: "eng-1", status: "confirmed" }]))
-      .mockResolvedValueOnce(mockQueryResult([]))
-      ;
+      .mockResolvedValueOnce(mockQueryResult([{ name: "Sarah", title: "Auditor", email: "s@test.com" }]));
+    // transactional calls go through client.query
+    mockClientQuery
+      .mockResolvedValueOnce(mockQueryResult([])) // BEGIN
+      .mockResolvedValueOnce(mockQueryResult([{ id: "eng-1", status: "confirmed" }])) // INSERT
+      .mockResolvedValueOnce(mockQueryResult([])) // UPDATE contractors
+      .mockResolvedValueOnce(mockQueryResult([])); // COMMIT
 
     const result = await bookContractor({
       contractor_id: "c-1",
@@ -746,20 +757,27 @@ describe("bookContractor", () => {
     expect(result).toHaveProperty("message");
     expect(result.message).toContain("booked");
 
-    const insertSql = mockQuery.mock.calls[1][0] as string;
+    const beginSql = mockClientQuery.mock.calls[0][0] as string;
+    expect(beginSql).toBe("BEGIN");
+
+    const insertSql = mockClientQuery.mock.calls[1][0] as string;
     expect(insertSql).toContain("INSERT INTO engagements");
 
-    const updateSql = mockQuery.mock.calls[2][0] as string;
+    const updateSql = mockClientQuery.mock.calls[2][0] as string;
     expect(updateSql).toContain("UPDATE contractors SET availability = 'unavailable'");
+
+    expect(mockClientRelease).toHaveBeenCalledOnce();
   });
 
   it("updates shortlist item status when shortlist_id provided", async () => {
     mockQuery
-      .mockResolvedValueOnce(mockQueryResult([{ name: "Sarah", title: "Auditor", email: "s@test.com" }]))
-      .mockResolvedValueOnce(mockQueryResult([{ id: "eng-1", status: "confirmed" }]))
-      .mockResolvedValueOnce(mockQueryResult([]))
-      .mockResolvedValueOnce(mockQueryResult([]))
-      ;
+      .mockResolvedValueOnce(mockQueryResult([{ name: "Sarah", title: "Auditor", email: "s@test.com" }]));
+    mockClientQuery
+      .mockResolvedValueOnce(mockQueryResult([])) // BEGIN
+      .mockResolvedValueOnce(mockQueryResult([{ id: "eng-1", status: "confirmed" }])) // INSERT
+      .mockResolvedValueOnce(mockQueryResult([])) // UPDATE contractors
+      .mockResolvedValueOnce(mockQueryResult([])) // UPDATE shortlist_items
+      .mockResolvedValueOnce(mockQueryResult([])); // COMMIT
 
     await bookContractor({
       contractor_id: "c-1",
@@ -767,9 +785,11 @@ describe("bookContractor", () => {
       shortlist_id: "sl-1",
     });
 
-    expect(mockQuery).toHaveBeenCalledTimes(4);
-    const shortlistSql = mockQuery.mock.calls[3][0] as string;
+    expect(mockClientQuery).toHaveBeenCalledTimes(5);
+    const shortlistSql = mockClientQuery.mock.calls[3][0] as string;
     expect(shortlistSql).toContain("UPDATE shortlist_items SET status = 'accepted'");
+
+    expect(mockClientRelease).toHaveBeenCalledOnce();
   });
 });
 

@@ -14,6 +14,18 @@
 import { pool } from "./db.js";
 import type { ContractorRow, JobRow } from "./types.js";
 
+/** Parse the numeric fields that pg returns as strings back to numbers. */
+function parseContractorNumerics<T extends Partial<ContractorRow>>(row: T) {
+  return {
+    ...row,
+    day_rate: parseInt(String(row.day_rate), 10),
+    years_experience: parseInt(String(row.years_experience), 10),
+    rating: row.rating ? parseFloat(String(row.rating)) : null,
+    review_count: parseInt(String(row.review_count), 10),
+    placement_count: parseInt(String(row.placement_count), 10),
+  };
+}
+
 /**
  * Parameters for {@link searchContractors}.
  *
@@ -91,7 +103,7 @@ export async function searchContractors(params: SearchParams) {
     paramIndex++;
   }
 
-  if (params.max_rate) {
+  if (params.max_rate != null) {
     conditions.push(`day_rate <= $${paramIndex}`);
     values.push(params.max_rate);
     paramIndex++;
@@ -103,7 +115,7 @@ export async function searchContractors(params: SearchParams) {
     paramIndex++;
   }
 
-  if (params.min_experience) {
+  if (params.min_experience != null) {
     conditions.push(`years_experience >= $${paramIndex}`);
     values.push(params.min_experience);
     paramIndex++;
@@ -149,14 +161,7 @@ export async function searchContractors(params: SearchParams) {
   return {
     total_matches: totalMatches,
     showing: dataResult.rows.length,
-    contractors: dataResult.rows.map((row: ContractorRow) => ({
-      ...row,
-      day_rate: parseInt(String(row.day_rate), 10),
-      years_experience: parseInt(String(row.years_experience), 10),
-      rating: row.rating ? parseFloat(String(row.rating)) : null,
-      review_count: parseInt(String(row.review_count), 10),
-      placement_count: parseInt(String(row.placement_count), 10),
-    })),
+    contractors: dataResult.rows.map((row: ContractorRow) => parseContractorNumerics(row)),
   };
 }
 
@@ -180,16 +185,7 @@ export async function getContractor(id: string) {
   );
 
   if (result.rows.length === 0) return null;
-
-  const row: ContractorRow = result.rows[0];
-  return {
-    ...row,
-    day_rate: parseInt(String(row.day_rate), 10),
-    years_experience: parseInt(String(row.years_experience), 10),
-    rating: row.rating ? parseFloat(String(row.rating)) : null,
-    review_count: parseInt(String(row.review_count), 10),
-    placement_count: parseInt(String(row.placement_count), 10),
-  };
+  return parseContractorNumerics(result.rows[0] as ContractorRow);
 }
 
 /**
@@ -214,16 +210,7 @@ export async function getContractorCV(id: string) {
   );
 
   if (result.rows.length === 0) return null;
-
-  const row: ContractorRow = result.rows[0];
-  return {
-    ...row,
-    day_rate: parseInt(String(row.day_rate), 10),
-    years_experience: parseInt(String(row.years_experience), 10),
-    rating: row.rating ? parseFloat(String(row.rating)) : null,
-    review_count: parseInt(String(row.review_count), 10),
-    placement_count: parseInt(String(row.placement_count), 10),
-  };
+  return parseContractorNumerics(result.rows[0] as ContractorRow);
 }
 
 /**
@@ -381,17 +368,15 @@ export async function findMatchingContractors(jobId: string, limit?: number) {
   );
 
   const contractors = result.rows.map((row: ContractorRow) => {
+    const parsed = parseContractorNumerics(row);
     const certMatch = job.required_certifications?.filter((c: string) => row.certifications?.includes(c)) || [];
     const skillMatch = job.required_skills?.filter((s: string) => row.skills?.includes(s)) || [];
     return {
-      ...row,
-      day_rate: parseInt(String(row.day_rate), 10),
-      years_experience: parseInt(String(row.years_experience), 10),
-      rating: row.rating ? parseFloat(String(row.rating)) : null,
+      ...parsed,
       matching_certifications: certMatch,
       matching_skills: skillMatch,
       location_match: row.location.toLowerCase() === job.location.toLowerCase(),
-      within_budget: parseInt(String(row.day_rate), 10) <= (job.day_rate_max || Infinity),
+      within_budget: parsed.day_rate <= (job.day_rate_max || Infinity),
     };
   });
 
@@ -508,15 +493,13 @@ export async function getShortlist(id: string) {
 
   return {
     ...shortlist.rows[0],
-    candidates: items.rows.map((row: ContractorRow & ShortlistItemRow) => ({
+    candidates: items.rows.map((row: ContractorRow) => ({
       ...row,
       day_rate: parseInt(String(row.day_rate), 10),
       rating: row.rating ? parseFloat(String(row.rating)) : null,
     })),
   };
 }
-
-type ShortlistItemRow = { status: string; notes: string | null; added_at: string; updated_at: string };
 
 /**
  * List all shortlists, optionally filtered by status.
@@ -536,7 +519,10 @@ export async function listShortlists(status?: string) {
     : `SELECT s.*, COUNT(si.id) as candidate_count FROM shortlists s LEFT JOIN shortlist_items si ON s.id = si.shortlist_id GROUP BY s.id ORDER BY s.created_at DESC`;
 
   const result = status ? await pool.query(query, [status]) : await pool.query(query);
-  return result.rows;
+  return result.rows.map((row: Record<string, unknown>) => ({
+    ...row,
+    candidate_count: parseInt(String(row.candidate_count), 10),
+  }));
 }
 
 /**
@@ -709,36 +695,48 @@ export async function bookContractor(params: BookContractorParams) {
   const contractor = await pool.query(`SELECT name, title, email FROM contractors WHERE id = $1`, [params.contractor_id]);
   if (contractor.rows.length === 0) return { error: "Contractor not found" };
 
-  const engagement = await pool.query(
-    `INSERT INTO engagements (contractor_id, shortlist_id, role_title, client_name, start_date, end_date, agreed_rate, status, notes)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'confirmed', $8)
-     RETURNING *`,
-    [
-      params.contractor_id, params.shortlist_id || null, params.role_title,
-      params.client_name || null, params.start_date || null, params.end_date || null,
-      params.agreed_rate || null, params.notes || null,
-    ]
-  );
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
 
-  await pool.query(
-    `UPDATE contractors SET availability = 'unavailable' WHERE id = $1`,
-    [params.contractor_id]
-  );
-
-  if (params.shortlist_id) {
-    await pool.query(
-      `UPDATE shortlist_items SET status = 'accepted', updated_at = NOW()
-       WHERE shortlist_id = $1 AND contractor_id = $2`,
-      [params.shortlist_id, params.contractor_id]
+    const engagement = await client.query(
+      `INSERT INTO engagements (contractor_id, shortlist_id, role_title, client_name, start_date, end_date, agreed_rate, status, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'confirmed', $8)
+       RETURNING *`,
+      [
+        params.contractor_id, params.shortlist_id || null, params.role_title,
+        params.client_name || null, params.start_date || null, params.end_date || null,
+        params.agreed_rate || null, params.notes || null,
+      ]
     );
-  }
 
-  return {
-    engagement: engagement.rows[0],
-    contractor_name: contractor.rows[0].name,
-    contractor_email: contractor.rows[0].email,
-    message: `${contractor.rows[0].name} has been booked for ${params.role_title}. Their availability has been updated to unavailable.`,
-  };
+    await client.query(
+      `UPDATE contractors SET availability = 'unavailable' WHERE id = $1`,
+      [params.contractor_id]
+    );
+
+    if (params.shortlist_id) {
+      await client.query(
+        `UPDATE shortlist_items SET status = 'accepted', updated_at = NOW()
+         WHERE shortlist_id = $1 AND contractor_id = $2`,
+        [params.shortlist_id, params.contractor_id]
+      );
+    }
+
+    await client.query("COMMIT");
+
+    return {
+      engagement: engagement.rows[0],
+      contractor_name: contractor.rows[0].name,
+      contractor_email: contractor.rows[0].email,
+      message: `${contractor.rows[0].name} has been booked for ${params.role_title}. Their availability has been updated to unavailable.`,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /**
@@ -752,36 +750,35 @@ export async function bookContractor(params: BookContractorParams) {
  * // { open_jobs: [...], summary: { open_jobs_count: 4, active_shortlists_count: 2, … } }
  */
 export async function getPipeline() {
-  const openJobs = await pool.query(
-    `SELECT id, title, client_name, status, urgency, location, start_date
-     FROM jobs WHERE status NOT IN ('filled', 'cancelled')
-     ORDER BY CASE urgency WHEN 'critical' THEN 1 WHEN 'urgent' THEN 2 WHEN 'normal' THEN 3 WHEN 'low' THEN 4 END`
-  );
-
-  const activeShortlists = await pool.query(
-    `SELECT s.id, s.name, s.role_title, s.client_name, s.status, COUNT(si.id) as candidate_count
-     FROM shortlists s
-     LEFT JOIN shortlist_items si ON s.id = si.shortlist_id
-     WHERE s.status = 'active'
-     GROUP BY s.id
-     ORDER BY s.created_at DESC`
-  );
-
-  const activeEngagements = await pool.query(
-    `SELECT e.*, c.name as contractor_name
-     FROM engagements e
-     JOIN contractors c ON e.contractor_id = c.id
-     WHERE e.status IN ('pending', 'confirmed', 'active')
-     ORDER BY e.start_date`
-  );
-
-  const pendingOutreach = await pool.query(
-    `SELECT od.id, od.subject, od.status, c.name as contractor_name
-     FROM outreach_drafts od
-     JOIN contractors c ON od.contractor_id = c.id
-     WHERE od.status = 'draft'
-     ORDER BY od.created_at DESC`
-  );
+  const [openJobs, activeShortlists, activeEngagements, pendingOutreach] = await Promise.all([
+    pool.query(
+      `SELECT id, title, client_name, status, urgency, location, start_date
+       FROM jobs WHERE status NOT IN ('filled', 'cancelled')
+       ORDER BY CASE urgency WHEN 'critical' THEN 1 WHEN 'urgent' THEN 2 WHEN 'normal' THEN 3 WHEN 'low' THEN 4 END`
+    ),
+    pool.query(
+      `SELECT s.id, s.name, s.role_title, s.client_name, s.status, COUNT(si.id) as candidate_count
+       FROM shortlists s
+       LEFT JOIN shortlist_items si ON s.id = si.shortlist_id
+       WHERE s.status = 'active'
+       GROUP BY s.id
+       ORDER BY s.created_at DESC`
+    ),
+    pool.query(
+      `SELECT e.*, c.name as contractor_name
+       FROM engagements e
+       JOIN contractors c ON e.contractor_id = c.id
+       WHERE e.status IN ('pending', 'confirmed', 'active')
+       ORDER BY e.start_date`
+    ),
+    pool.query(
+      `SELECT od.id, od.subject, od.status, c.name as contractor_name
+       FROM outreach_drafts od
+       JOIN contractors c ON od.contractor_id = c.id
+       WHERE od.status = 'draft'
+       ORDER BY od.created_at DESC`
+    ),
+  ]);
 
   return {
     open_jobs: openJobs.rows,
