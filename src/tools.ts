@@ -1,19 +1,67 @@
+/**
+ * @file MCP tool implementations for the contractor management platform.
+ *
+ * Each exported function maps 1-to-1 to an MCP tool exposed by the server in
+ * `index.ts`. Functions build parameterised SQL queries against the PostgreSQL
+ * database (via `pool` from `db.ts`) and return plain objects that the MCP
+ * transport layer serialises as JSON.
+ *
+ * Numeric columns (day_rate, years_experience, rating, review_count,
+ * placement_count) are explicitly parsed from strings to numbers because the
+ * `pg` driver returns PostgreSQL numeric/integer values as strings.
+ */
+
 import { pool } from "./db.js";
 import type { ContractorRow, JobRow } from "./types.js";
 
+/**
+ * Parameters for {@link searchContractors}.
+ *
+ * Every field is optional — omitting all fields returns the first `limit`
+ * contractors ordered by rating.
+ */
 interface SearchParams {
+  /** Free-text search across name, title, bio, and skills (uses LIKE with wildcards). */
   query?: string;
+  /** Exact (case-insensitive) location filter. */
   location?: string;
+  /** Availability status. The value `"any"` is treated as no filter. */
   availability?: string;
+  /** Overlap filter — matches contractors whose certifications array intersects. */
   certifications?: string[];
+  /** Upper bound (inclusive) on `day_rate`. */
   max_rate?: number;
+  /** Exact match against any entry in the contractor's `sectors` array. */
   sector?: string;
+  /** Overlap filter — matches contractors whose skills array intersects. */
   skills?: string[];
+  /** Lower bound (inclusive) on `years_experience`. */
   min_experience?: number;
+  /** Exact match on `security_clearance`. */
   clearance?: string;
+  /** Maximum number of contractors to return. Defaults to 10. */
   limit?: number;
 }
 
+/**
+ * Search contractors with up to 9 optional filters built into a dynamic WHERE clause.
+ *
+ * @param params - See {@link SearchParams}. All fields optional.
+ * @returns `{ total_matches, showing, contractors[] }` where `total_matches` is
+ *   the unscoped count of matching rows and `showing` is the number returned
+ *   after the LIMIT.
+ *
+ * @example
+ * // { total_matches: 42, showing: 10, contractors: [{ id, name, … }] }
+ *
+ * @remarks
+ * - `availability: "any"` is explicitly ignored so callers can pass it without effect.
+ * - The `query` param wraps the value in `%…%` and LIKEs across name, title,
+ *   bio, and each element of the skills array.
+ * - `limit` defaults to 10 when omitted.
+ * - Numeric fields (`day_rate`, `years_experience`, `rating`, `review_count`,
+ *   `placement_count`) are parsed from string to number.
+ */
 export async function searchContractors(params: SearchParams) {
   const conditions: string[] = [];
   const values: (string | number | string[])[] = [];
@@ -112,6 +160,15 @@ export async function searchContractors(params: SearchParams) {
   };
 }
 
+/**
+ * Fetch a single contractor's profile by UUID.
+ *
+ * @param id - Contractor UUID.
+ * @returns The contractor object with parsed numeric fields, or `null` if not found.
+ *
+ * @example
+ * // { id: "abc-123", name: "Jane Doe", day_rate: 650, … } | null
+ */
 export async function getContractor(id: string) {
   const result = await pool.query(
     `SELECT id, name, initials, title, bio, location, day_rate, years_experience,
@@ -135,6 +192,16 @@ export async function getContractor(id: string) {
   };
 }
 
+/**
+ * Fetch a contractor's full CV including education, work history, notable
+ * projects, and languages.
+ *
+ * @param id - Contractor UUID.
+ * @returns The contractor object with CV-specific fields, or `null` if not found.
+ *
+ * @example
+ * // { id: "abc-123", name: "Jane Doe", education: [...], work_history: [...], … } | null
+ */
 export async function getContractorCV(id: string) {
   const result = await pool.query(
     `SELECT id, name, initials, title, bio, location, day_rate, years_experience,
@@ -159,14 +226,35 @@ export async function getContractorCV(id: string) {
   };
 }
 
+/**
+ * Parameters for {@link listJobs}.
+ *
+ * All fields optional — omitting all returns the first `limit` jobs ordered by
+ * urgency then creation date.
+ */
 interface ListJobsParams {
+  /** Filter by job status (e.g. `"open"`, `"filled"`). */
   status?: string;
+  /** Case-insensitive sector filter. */
   sector?: string;
+  /** Urgency level: `"critical"`, `"urgent"`, `"normal"`, or `"low"`. */
   urgency?: string;
+  /** Case-insensitive location filter. */
   location?: string;
+  /** Maximum number of jobs to return. Defaults to 20. */
   limit?: number;
 }
 
+/**
+ * List jobs with optional filters, ordered by urgency (critical → low) then
+ * creation date descending.
+ *
+ * @param params - See {@link ListJobsParams}.
+ * @returns `{ total, jobs[] }` where `total` is the count of returned rows.
+ *
+ * @example
+ * // { total: 5, jobs: [{ id, title, urgency: "critical", … }] }
+ */
 export async function listJobs(params: ListJobsParams) {
   const conditions: string[] = [];
   const values: (string | number)[] = [];
@@ -213,12 +301,35 @@ export async function listJobs(params: ListJobsParams) {
   };
 }
 
+/**
+ * Fetch a single job by UUID.
+ *
+ * @param id - Job UUID.
+ * @returns The job row, or `null` if not found.
+ */
 export async function getJob(id: string) {
   const result = await pool.query(`SELECT * FROM jobs WHERE id = $1`, [id]);
   if (result.rows.length === 0) return null;
   return result.rows[0] as JobRow;
 }
 
+/**
+ * Auto-match contractors to a job's requirements and return compatibility details.
+ *
+ * Filters contractors by the job's required certifications, skills, clearance,
+ * and minimum experience. Always excludes contractors with `availability = 'unavailable'`.
+ * Results are sorted by location match, then rating, then experience.
+ *
+ * @param jobId - UUID of the job to match against.
+ * @param limit - Maximum matches to return. Defaults to 10.
+ * @returns `{ job, total_matches, contractors[] }` where each contractor includes
+ *   `matching_certifications`, `matching_skills`, `location_match`, and
+ *   `within_budget` flags — or `{ error }` if the job is not found.
+ *
+ * @example
+ * // { job: { id, title, … }, total_matches: 3, contractors: [{ …, location_match: true, within_budget: true }] }
+ * // { error: "Job not found" }
+ */
 export async function findMatchingContractors(jobId: string, limit?: number) {
   const job = await getJob(jobId);
   if (!job) return { error: "Job not found" };
@@ -291,13 +402,27 @@ export async function findMatchingContractors(jobId: string, limit?: number) {
   };
 }
 
+/** Parameters for {@link createShortlist}. */
 interface CreateShortlistParams {
+  /** Display name for the shortlist. */
   name: string;
+  /** Optional description of the shortlist's purpose. */
   description?: string;
+  /** Role title the shortlist targets. */
   role_title?: string;
+  /** Client the shortlist is prepared for. */
   client_name?: string;
 }
 
+/**
+ * Create a new shortlist.
+ *
+ * @param params - See {@link CreateShortlistParams}. Only `name` is required.
+ * @returns The newly inserted shortlist row (all columns via `RETURNING *`).
+ *
+ * @example
+ * // { id: "sl-123", name: "Q1 DevOps", status: "active", … }
+ */
 export async function createShortlist(params: CreateShortlistParams) {
   const result = await pool.query(
     `INSERT INTO shortlists (name, description, role_title, client_name)
@@ -308,12 +433,36 @@ export async function createShortlist(params: CreateShortlistParams) {
   return result.rows[0];
 }
 
+/**
+ * Parameters for {@link addToShortlist}.
+ *
+ * Uses `ON CONFLICT (shortlist_id, contractor_id)` for upsert — re-adding a
+ * contractor that already exists on the shortlist will update `notes` and
+ * `updated_at` instead of failing.
+ */
 interface AddToShortlistParams {
+  /** UUID of the target shortlist. */
   shortlist_id: string;
+  /** UUID of the contractor to add. */
   contractor_id: string;
+  /** Optional notes about why this contractor was shortlisted. */
   notes?: string;
 }
 
+/**
+ * Add a contractor to a shortlist (upsert).
+ *
+ * Validates the contractor exists before inserting. If the contractor is already
+ * on the shortlist, the existing row's `notes` and `updated_at` are updated.
+ *
+ * @param params - See {@link AddToShortlistParams}.
+ * @returns The upserted row plus `contractor_name` and `contractor_title`,
+ *   or `{ error: "Contractor not found" }`.
+ *
+ * @example
+ * // { id: "si-1", shortlist_id: "sl-1", contractor_name: "Jane", … }
+ * // { error: "Contractor not found" }
+ */
 export async function addToShortlist(params: AddToShortlistParams) {
   const contractor = await pool.query(`SELECT name, title FROM contractors WHERE id = $1`, [params.contractor_id]);
   if (contractor.rows.length === 0) return { error: "Contractor not found" };
@@ -333,6 +482,17 @@ export async function addToShortlist(params: AddToShortlistParams) {
   };
 }
 
+/**
+ * Fetch a shortlist by UUID including all candidate details via JOIN.
+ *
+ * @param id - Shortlist UUID.
+ * @returns The shortlist object with a `candidates[]` array (each with parsed
+ *   numeric fields), or `null` if the shortlist does not exist.
+ *
+ * @example
+ * // { id: "sl-1", name: "DevOps Q1", candidates: [{ name: "Jane", day_rate: 650, … }] }
+ * // null
+ */
 export async function getShortlist(id: string) {
   const shortlist = await pool.query(`SELECT * FROM shortlists WHERE id = $1`, [id]);
   if (shortlist.rows.length === 0) return null;
@@ -358,6 +518,18 @@ export async function getShortlist(id: string) {
 
 type ShortlistItemRow = { status: string; notes: string | null; added_at: string; updated_at: string };
 
+/**
+ * List all shortlists, optionally filtered by status.
+ *
+ * Each row includes a `candidate_count` derived from a LEFT JOIN on
+ * `shortlist_items`, so shortlists with no candidates show `0`.
+ *
+ * @param status - Optional status filter (e.g. `"active"`, `"closed"`).
+ * @returns Array of shortlist rows with `candidate_count`.
+ *
+ * @example
+ * // [{ id: "sl-1", name: "DevOps Q1", candidate_count: "3", … }]
+ */
 export async function listShortlists(status?: string) {
   const query = status
     ? `SELECT s.*, COUNT(si.id) as candidate_count FROM shortlists s LEFT JOIN shortlist_items si ON s.id = si.shortlist_id WHERE s.status = $1 GROUP BY s.id ORDER BY s.created_at DESC`
@@ -367,12 +539,28 @@ export async function listShortlists(status?: string) {
   return result.rows;
 }
 
+/**
+ * Parameters for {@link updateShortlistItemStatus}.
+ */
 interface UpdateShortlistItemStatusParams {
+  /** UUID of the shortlist containing the item. */
   shortlist_id: string;
+  /** UUID of the contractor whose status is being changed. */
   contractor_id: string;
+  /** New status value (e.g. `"accepted"`, `"rejected"`, `"pending"`). */
   status: string;
 }
 
+/**
+ * Update the status of a contractor on a shortlist.
+ *
+ * @param params - See {@link UpdateShortlistItemStatusParams}.
+ * @returns The updated row (via `RETURNING *`), or `{ error: "Shortlist item not found" }`.
+ *
+ * @example
+ * // { id: "si-1", status: "accepted", updated_at: "…", … }
+ * // { error: "Shortlist item not found" }
+ */
 export async function updateShortlistItemStatus(params: UpdateShortlistItemStatusParams) {
   const result = await pool.query(
     `UPDATE shortlist_items SET status = $1, updated_at = NOW()
@@ -384,13 +572,33 @@ export async function updateShortlistItemStatus(params: UpdateShortlistItemStatu
   return result.rows[0];
 }
 
+/**
+ * Parameters for {@link draftOutreach}.
+ */
 interface DraftOutreachParams {
+  /** UUID of the contractor to contact. */
   contractor_id: string;
+  /** Optional shortlist this outreach relates to. */
   shortlist_id?: string;
+  /** Email subject line. */
   subject: string;
+  /** Email body content. */
   body: string;
 }
 
+/**
+ * Create an outreach draft for a contractor.
+ *
+ * Validates the contractor exists before inserting.
+ *
+ * @param params - See {@link DraftOutreachParams}.
+ * @returns The inserted draft row plus `contractor_name` and `contractor_email`,
+ *   or `{ error: "Contractor not found" }`.
+ *
+ * @example
+ * // { id: "od-1", subject: "Opportunity", contractor_name: "Jane", contractor_email: "jane@…", … }
+ * // { error: "Contractor not found" }
+ */
 export async function draftOutreach(params: DraftOutreachParams) {
   const contractor = await pool.query(`SELECT name, email FROM contractors WHERE id = $1`, [params.contractor_id]);
   if (contractor.rows.length === 0) return { error: "Contractor not found" };
@@ -409,11 +617,26 @@ export async function draftOutreach(params: DraftOutreachParams) {
   };
 }
 
+/**
+ * Parameters for {@link listOutreach}.
+ */
 interface ListOutreachParams {
+  /** Filter drafts by contractor UUID. */
   contractor_id?: string;
+  /** Filter by draft status (e.g. `"draft"`, `"sent"`). */
   status?: string;
 }
 
+/**
+ * List outreach drafts with optional filters, joined with contractor details.
+ *
+ * @param params - See {@link ListOutreachParams}. Both fields optional.
+ * @returns Array of outreach rows, each including `contractor_name` and
+ *   `contractor_email`, ordered by creation date descending.
+ *
+ * @example
+ * // [{ id: "od-1", subject: "…", contractor_name: "Jane", status: "draft", … }]
+ */
 export async function listOutreach(params?: ListOutreachParams) {
   const conditions: string[] = [];
   const values: string[] = [];
@@ -445,17 +668,43 @@ export async function listOutreach(params?: ListOutreachParams) {
   return result.rows;
 }
 
+/**
+ * Parameters for {@link bookContractor}.
+ */
 interface BookContractorParams {
+  /** UUID of the contractor to book. */
   contractor_id: string;
+  /** Title of the role the contractor is being booked for. */
   role_title: string;
+  /** Client the engagement is with. */
   client_name?: string;
+  /** Shortlist this booking originated from. If provided, the corresponding shortlist item is marked `"accepted"`. */
   shortlist_id?: string;
+  /** Engagement start date (ISO 8601 string). */
   start_date?: string;
+  /** Engagement end date (ISO 8601 string). */
   end_date?: string;
+  /** Agreed daily rate for the engagement. */
   agreed_rate?: number;
+  /** Free-text notes about the engagement. */
   notes?: string;
 }
 
+/**
+ * Book a contractor by creating an engagement and updating related records.
+ *
+ * **Side-effects:**
+ * 1. Sets the contractor's `availability` to `"unavailable"`.
+ * 2. If `shortlist_id` is provided, marks the matching `shortlist_item` as `"accepted"`.
+ *
+ * @param params - See {@link BookContractorParams}.
+ * @returns `{ engagement, contractor_name, contractor_email, message }`,
+ *   or `{ error: "Contractor not found" }`.
+ *
+ * @example
+ * // { engagement: { id: "eng-1", status: "confirmed", … }, contractor_name: "Jane", message: "Jane has been booked…" }
+ * // { error: "Contractor not found" }
+ */
 export async function bookContractor(params: BookContractorParams) {
   const contractor = await pool.query(`SELECT name, title, email FROM contractors WHERE id = $1`, [params.contractor_id]);
   if (contractor.rows.length === 0) return { error: "Contractor not found" };
@@ -492,6 +741,16 @@ export async function bookContractor(params: BookContractorParams) {
   };
 }
 
+/**
+ * Aggregate a pipeline overview across open jobs, active shortlists,
+ * engagements, and pending outreach.
+ *
+ * @returns `{ open_jobs[], active_shortlists[], active_engagements[], pending_outreach[], summary }`.
+ *   `summary` contains integer counts for each category.
+ *
+ * @example
+ * // { open_jobs: [...], summary: { open_jobs_count: 4, active_shortlists_count: 2, … } }
+ */
 export async function getPipeline() {
   const openJobs = await pool.query(
     `SELECT id, title, client_name, status, urgency, location, start_date
@@ -538,6 +797,17 @@ export async function getPipeline() {
   };
 }
 
+/**
+ * Update a job's status.
+ *
+ * @param id - Job UUID.
+ * @param status - New status value (e.g. `"open"`, `"filled"`, `"cancelled"`).
+ * @returns The updated job row (via `RETURNING *`), or `{ error: "Job not found" }`.
+ *
+ * @example
+ * // { id: "job-1", status: "filled", updated_at: "…", … }
+ * // { error: "Job not found" }
+ */
 export async function updateJobStatus(id: string, status: string) {
   const result = await pool.query(
     `UPDATE jobs SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
