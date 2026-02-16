@@ -57,10 +57,27 @@ export async function validateUser(token: string): Promise<{ allowed: boolean; e
   return { allowed, email: user.email };
 }
 
+function getBaseUrl(req: Request): string {
+  if (req.headers.host) {
+    const proto = req.headers["x-forwarded-proto"] || "https";
+    return `${proto}://${req.headers.host}`;
+  }
+  if (process.env.REPLIT_DEPLOYMENT_URL) {
+    return `https://${process.env.REPLIT_DEPLOYMENT_URL}`;
+  }
+  if (process.env.REPLIT_DEV_DOMAIN) {
+    return `https://${process.env.REPLIT_DEV_DOMAIN}`;
+  }
+  return `http://localhost:${process.env.PORT || 5000}`;
+}
+
 export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith("Bearer ")) {
-    res.status(401).json({ error: "Missing or invalid authorization header" });
+    const baseUrl = getBaseUrl(req);
+    res.status(401)
+      .set("WWW-Authenticate", `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource"`)
+      .json({ error: "Unauthorized" });
     return;
   }
 

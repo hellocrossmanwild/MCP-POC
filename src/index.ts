@@ -10,6 +10,25 @@ import { searchContractors, getContractor } from "./tools.js";
 const app = express();
 app.use(express.json());
 
+function getBaseUrl(req?: express.Request): string {
+  if (req?.headers.host) {
+    const proto = req.headers["x-forwarded-proto"] || "https";
+    return `${proto}://${req.headers.host}`;
+  }
+  if (process.env.REPLIT_DEPLOYMENT_URL) {
+    return `https://${process.env.REPLIT_DEPLOYMENT_URL}`;
+  }
+  if (process.env.REPLIT_DEV_DOMAIN) {
+    return `https://${process.env.REPLIT_DEV_DOMAIN}`;
+  }
+  return `http://localhost:${process.env.PORT || 5000}`;
+}
+
+app.use((req, _res, next) => {
+  console.log(`${req.method} ${req.path} [${req.headers.authorization ? "auth" : "no-auth"}]`);
+  next();
+});
+
 function createMcpServer(): McpServer {
   const server = new McpServer({
     name: "contractor-search",
@@ -109,11 +128,18 @@ app.post("/mcp", authMiddleware, async (req, res) => {
   }
 });
 
-app.get("/.well-known/oauth-authorization-server", (_req, res) => {
-  const baseUrl = process.env.REPLIT_DEV_DOMAIN
-    ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-    : `http://localhost:${process.env.PORT || 5000}`;
+app.get("/.well-known/oauth-protected-resource", (req, res) => {
+  const baseUrl = getBaseUrl(req);
+  res.json({
+    resource: baseUrl,
+    authorization_servers: [baseUrl],
+    scopes_supported: ["openid", "email", "profile"],
+    bearer_methods_supported: ["header"],
+  });
+});
 
+app.get("/.well-known/oauth-authorization-server", (req, res) => {
+  const baseUrl = getBaseUrl(req);
   res.json({
     issuer: baseUrl,
     authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
@@ -123,14 +149,22 @@ app.get("/.well-known/oauth-authorization-server", (_req, res) => {
     response_types_supported: ["code"],
     grant_types_supported: ["authorization_code", "refresh_token"],
     code_challenge_methods_supported: ["S256"],
+    token_endpoint_auth_methods_supported: ["client_secret_post", "none"],
   });
 });
 
-app.post("/oauth/register", (_req, res) => {
-  res.json({
+app.post("/oauth/register", (req, res) => {
+  console.log("OAuth DCR request:", JSON.stringify(req.body));
+  const redirectUris = req.body?.redirect_uris || [
+    "https://claude.ai/api/mcp/auth_callback",
+    "https://claude.com/api/mcp/auth_callback",
+  ];
+  res.status(201).json({
     client_id: process.env.GOOGLE_CLIENT_ID || "",
     client_secret: process.env.GOOGLE_CLIENT_SECRET || "",
-    redirect_uris: [],
+    client_id_issued_at: Math.floor(Date.now() / 1000),
+    client_secret_expires_at: 0,
+    redirect_uris: redirectUris,
     grant_types: ["authorization_code", "refresh_token"],
     response_types: ["code"],
     token_endpoint_auth_method: "client_secret_post",
@@ -151,6 +185,7 @@ app.get("/", (_req, res) => {
       streamable_http: "/mcp",
       health: "/health",
       oauth_metadata: "/.well-known/oauth-authorization-server",
+      protected_resource: "/.well-known/oauth-protected-resource",
     },
   });
 });
@@ -161,6 +196,7 @@ async function main() {
   await initDatabase();
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`MCP Server running on http://0.0.0.0:${PORT}`);
+    console.log(`Base URL: ${getBaseUrl()}`);
     console.log(`SSE endpoint: /sse`);
     console.log(`Streamable HTTP endpoint: /mcp`);
     console.log(`Health check: /health`);
